@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "slugifiable/version"
+require_relative "slugifiable/model"
 
 module Slugifiable
   class Error < StandardError; end
