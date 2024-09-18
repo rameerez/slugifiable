@@ -51,40 +51,96 @@ gem 'slugifiable'
 Then run `bundle install`.
 
 After installing the gem, add `include Slugifiable::Model` to any model you want to provide with slugs, like this:
-```
-class Company < ApplicationRecord
-  has_many :employees
-
+```ruby
+class Product < ApplicationRecord
   include Slugifiable::Model # Adding this provides all the required slug-related methods to your model
 end
 ```
 
 Then you can, for example, get the slug for a company like this:
-```
-Company.first.slug
+```ruby
+Product.first.slug
 => "4e07408562b"
 ```
 
+You can also define how to generate slugs:
+```ruby
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :name
+end
+```
+
+And this will generate slugs based on your `Company` instance `name`, like:
+```ruby
+Product.first.slug
+=> "big-red-backpack"
+```
+
+More details in the "How to use" section.
+
 ## How to use
 
-TODO: write this section
+Slugs should never change, so it's recommended you save your slugs to the database.
 
-- based off id, also supports uuid
-- slug collision resolver
-  - customizable before and after?
-  - requires us to both transform it into a slug and resolve collisions. This way, if you have two companies named "Technology Services", each one will get a different slug:
+Therefore, all models that include `Slugifiable::Model` should have a `slug` attribute that persists the slug in the database. If your model doesn't have a `slug` attribute yet, just run:
 ```
-https://myapp.com/companies/technology-services
-
-# and
-
-https://myapp.com/companies/technology-services-6b86b273ff3
+rails g migration addSlugTo<MODEL_NAME> slug:text
 ```
-- number-based (customizable length?)
-- string-based (customizable length?)
-- readable-attribute (customizable length?)
-- works with and without a `slug` attribute (but better to store it)
-- warning: always generate your slugs based off attrs that are not going to change (like id), not attrs that might change (like name or email) -- slugs should be unique and immutable
+
+where `<MODEL_NAME>` is your model name in plural, and then run:
+```
+rails db:migrate
+```
+
+And your model should now have a `slug` attribute in the database.
+
+When a model has a `slug` attribute, `slugifiable` automatically generates a slug for that model upon instance creation, and saves it to the DB.
+
+`slugifiable` can also work without persisting slugs to the databse, though: you can always run `.slug`, and that will give you a valid, unique slug for your record.
+
+### Define how slugs are generated
+
+By default, when you include `Slugifiable::Model`, slugs will be generated as a string based off the record `id`
+
+`slugifiable` supports both `id` and `uuid`.
+
+The default setting is:
+```ruby
+generate_slug_based_on id: :string
+```
+
+Which returns slugs like: `d4735e3a265`
+
+You can get number-based slugs with:
+```ruby
+generate_slug_based_on id: :number
+```
+
+Which will return slugs like: `321678`
+
+You can also specify an attribute to base your slugs off of, if you want to create SEO-friendly slugs and expose that attribute publicly. For example:
+```ruby
+generate_slug_based_on :name
+```
+
+Will look for a `name` attribute in your model, and use its value to generate the slug. So if you have a product like:
+```ruby
+Product.first.name
+=> "Big Red Backpack"
+```
+
+then the slug will be computed as:
+```ruby
+Product.first.slug
+=> "big-red-backpack"
+```
+
+There may be collisions if two records share the same name – but slugs should be unique! To resolve this, when this happens, `slugifiable` will append a unique string at the end to make the slug unique:
+```ruby
+Product.first.slug
+=> "big-red-backpack-d4735e3a265"
+```
 
 ## Development
 
