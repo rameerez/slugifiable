@@ -1,34 +1,100 @@
-# Slugifiable
+# 🐌 `slugifiable` - Rails gem to generate SEO-friendly slugs
 
-TODO: Delete this and the text below, and describe your gem
+[![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable)
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/slugifiable`. To experiment with that code, run `bin/console` for an interactive prompt.
+Automatically generates unique slugs for your records, so you can expose them in SEO-friendly URLs.
+
+Example:
+```
+https://myapp.com/products/big-red-backpack-d4735e3a265
+```
+
+Where `big-red-backpack-d4735e3a265` is the slug.
+
+`slugifiable` can generate:
+- Unique string-based slugs based on any attribute, such as `product.name` (like `"big-red-backpack"` or `"big-red-backpack-d4735e3a265"`)
+- Unique and random string-based slugs based off an ID (like `"d4735e3a265"`)
+- Unique and random number-based slugs based off an ID (like `321678`).
+
+## Why
+
+When building URLs, especially when building SEO-friendly URLs, we usually need to expose something that identifies a record, like:
+```
+https://myapp.com/products/123
+```
+
+The problem is exposing internal IDs is not usually good practice. It can give away how many records you have in the database, could be an attack vector, and it just feels off.
+
+It would be much better to have a random string or number instead, while still remaining unique and identifiable:
+```
+https://myapp.com/products/321678
+
+# or
+
+https://myapp.com/products/d4735e3a265
+```
+
+Or better yet, use other attribute (like `product.name`), which makes a human-readable and SEO-friendly URL, like:
+```
+https://myapp.com/products/big-red-backpack
+```
+
+`slugifiable` takes care of building these slugs automatically for you.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+Add this line to your application's Gemfile:
+```ruby
+gem 'slugifiable'
+```
 
-Install the gem and add to the application's Gemfile by executing:
+Then run `bundle install`.
 
-    $ bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+After installing the gem, add `include Slugifiable::Model` to any model you want to provide with slugs, like this:
+```
+class Company < ApplicationRecord
+  has_many :employees
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+  include Slugifiable::Model # Adding this provides all the required slug-related methods to your model
+end
+```
 
-    $ gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+Then you can, for example, get the slug for a company like this:
+```
+Company.first.slug
+=> "4e07408562b"
+```
 
-## Usage
+## How to use
 
-TODO: Write usage instructions here
+TODO: write this section
+
+- based off id, also supports uuid
+- slug collision resolver
+  - customizable before and after?
+  - requires us to both transform it into a slug and resolve collisions. This way, if you have two companies named "Technology Services", each one will get a different slug:
+```
+https://myapp.com/companies/technology-services
+
+# and
+
+https://myapp.com/companies/technology-services-6b86b273ff3
+```
+- number-based (customizable length?)
+- string-based (customizable length?)
+- readable-attribute (customizable length?)
+- works with and without a `slug` attribute (but better to store it)
+- warning: always generate your slugs based off attrs that are not going to change (like id), not attrs that might change (like name or email) -- slugs should be unique and immutable
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+To install this gem onto your local machine, run `bundle exec rake install`.
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/slugifiable.
+Bug reports and pull requests are welcome on GitHub at https://github.com/rameerez/slugifiable. Our code of conduct is: just be nice and make your mom proud of what you do and post online.
 
 ## License
 
