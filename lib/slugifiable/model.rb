@@ -42,7 +42,7 @@ module Slugifiable
 
     def method_missing(missing_method, *args, &block)
       if missing_method.to_s == "slug" && !self.methods.include?(:slug)
-        compute_slug_as_string
+        compute_slug
       else
         super
       end
@@ -62,6 +62,8 @@ module Slugifiable
     end
 
     def compute_slug_based_on_attribute(attribute_name)
+      return compute_slug_as_string unless self.attributes.include?(attribute_name.to_s)
+
       base_slug = self.send(attribute_name)&.to_s&.strip&.parameterize
       base_slug = base_slug.presence || generate_random_number_based_on_id_hex
 
