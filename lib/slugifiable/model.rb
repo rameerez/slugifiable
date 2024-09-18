@@ -101,7 +101,7 @@ module Slugifiable
       slug_generation_strategy = generate_slug_based_on.first
       strategy_attributes = generate_slug_based_on.second
 
-      if !slug_generation_strategy.is_a?(Array) && !slug_generation_strategy.is_a?(Symbol)
+      if !slug_generation_strategy.is_a?(Array) && !slug_generation_strategy.is_a?(Hash) && !slug_generation_strategy.is_a?(Symbol)
         return [DEFAULT_SLUG_GENERATION_STRATEGY]
       end
 
