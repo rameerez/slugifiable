@@ -6,24 +6,24 @@ Automatically generates unique slugs for your records, so you can expose them in
 
 Example:
 ```
-https://myapp.com/products/big-red-backpack-d4735e3a265
+https://myapp.com/products/big-red-backpack-321678
 ```
 
-Where `big-red-backpack-d4735e3a265` is the slug.
+Where `big-red-backpack-321678` is the slug.
 
 `slugifiable` can generate:
-- Unique string-based slugs based on any attribute, such as `product.name` (like `"big-red-backpack"` or `"big-red-backpack-d4735e3a265"`)
-- Unique and random string-based slugs based off an ID (like `"d4735e3a265"`)
-- Unique and random number-based slugs based off an ID (like `321678`).
+- Slugs like `"big-red-backpack"` or `"big-red-backpack-321678"`: unique, string-based slugs based on any attribute, such as `product.name`
+- Slugs like `"d4735e3a265"`: unique and random **hex string slugs**
+- Slugs like `321678`: unique and random **number-only slugs**
 
 ## Why
 
-When building URLs, especially when building SEO-friendly URLs, we usually need to expose something that identifies a record, like:
+When building URLs, especially when building SEO-friendly URLs, we usually need to expose something to identify a record, like:
 ```
 https://myapp.com/products/123
 ```
 
-The problem is exposing internal IDs is not usually good practice. It can give away how many records you have in the database, could be an attack vector, and it just feels off.
+The problem is exposing internal IDs is not usually good practice. It can give away how many records you have in the database, it could also be an attack vector, and it just feels off.
 
 It would be much better to have a random string or number instead, while still remaining unique and identifiable:
 ```
@@ -107,12 +107,12 @@ By default, when you include `Slugifiable::Model`, slugs will be generated as a 
 
 The default setting is:
 ```ruby
-generate_slug_based_on id: :string
+generate_slug_based_on id: :hex_string
 ```
 
 Which returns slugs like: `d4735e3a265`
 
-You can get number-based slugs with:
+You can get number-only slugs with:
 ```ruby
 generate_slug_based_on id: :number
 ```
@@ -139,7 +139,7 @@ Product.first.slug
 There may be collisions if two records share the same name – but slugs should be unique! To resolve this, when this happens, `slugifiable` will append a unique string at the end to make the slug unique:
 ```ruby
 Product.first.slug
-=> "big-red-backpack-d4735e3a265"
+=> "big-red-backpack-321678"
 ```
 
 ## Development

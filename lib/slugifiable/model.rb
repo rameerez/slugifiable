@@ -82,12 +82,14 @@ module Slugifiable
 
       return slug_candidate unless slug_persisted?
 
+      # Collision resolution logic:
+
       count = 0
 
       while self.class.exists?(slug: slug_candidate)
         count += 1
         # slug_candidate = "#{base_slug}-#{count}"
-        slug_candidate = "#{base_slug}-#{compute_slug_as_string}"
+        slug_candidate = "#{base_slug}-#{compute_slug_as_number}"
       end
 
       slug_candidate
@@ -118,7 +120,7 @@ module Slugifiable
       elsif slug_generation_strategy.include?(:id)
         return_as = slug_generation_strategy.dig(:id)
 
-        if return_as == :string
+        if return_as == :hex_string
           return [:compute_slug_as_string]
         elsif return_as == :number
           return [:compute_slug_as_number]
