@@ -25,6 +25,8 @@ module Slugifiable
     # ```
 
     DEFAULT_SLUG_GENERATION_STRATEGY = :compute_slug_as_string
+    DEFAULT_SLUG_STRING_LENGTH = 11
+    DEFAULT_SLUG_NUMBER_LENGTH = 6
 
     included do
       after_create :set_slug
@@ -33,11 +35,12 @@ module Slugifiable
     end
 
     class_methods do
-      def generate_slug_based_on(strategy_method_name = DEFAULT_SLUG_GENERATION_STRATEGY, *args)
+      def generate_slug_based_on(strategy, options = {})
         define_method(:generate_slug_based_on) do
-          [strategy_method_name, args]
+          [strategy, options]
         end
       end
+
     end
 
     def method_missing(missing_method, *args, &block)
@@ -49,16 +52,25 @@ module Slugifiable
     end
 
     def compute_slug
-      method_name, args = determine_slug_generation_method
-      return self.send(method_name, *args)
+      strategy, options = determine_slug_generation_method
+
+      length = options[:length] if options.is_a?(Hash) || nil
+
+      if strategy == :compute_slug_based_on_attribute
+        self.send(strategy, options)
+      else
+        self.send(strategy, length)
+      end
     end
 
-    def compute_slug_as_string
-      return (Digest::SHA2.hexdigest self.id.to_s).first(11)
+    def compute_slug_as_string(length = DEFAULT_SLUG_STRING_LENGTH)
+      length ||= DEFAULT_SLUG_STRING_LENGTH
+      (Digest::SHA2.hexdigest self.id.to_s).first(length)
     end
 
-    def compute_slug_as_number
-      generate_random_number_based_on_id_hex
+    def compute_slug_as_number(length = DEFAULT_SLUG_NUMBER_LENGTH)
+      length ||= DEFAULT_SLUG_NUMBER_LENGTH
+      generate_random_number_based_on_id_hex(length)
     end
 
     def compute_slug_based_on_attribute(attribute_name)
@@ -73,8 +85,9 @@ module Slugifiable
 
     private
 
-    def generate_random_number_based_on_id_hex
-      ((Digest::SHA2.hexdigest(id.to_s)).hex % 1000000)
+    def generate_random_number_based_on_id_hex(length = DEFAULT_SLUG_NUMBER_LENGTH)
+      length ||= DEFAULT_SLUG_NUMBER_LENGTH
+      ((Digest::SHA2.hexdigest(id.to_s)).hex % (10 ** length))
     end
 
     def generate_unique_slug(base_slug)
@@ -96,41 +109,35 @@ module Slugifiable
     end
 
     def determine_slug_generation_method
-      return [DEFAULT_SLUG_GENERATION_STRATEGY] unless respond_to?(:generate_slug_based_on)
+      return [DEFAULT_SLUG_GENERATION_STRATEGY, {}] unless respond_to?(:generate_slug_based_on)
 
-      slug_generation_strategy = generate_slug_based_on.first
-      strategy_attributes = generate_slug_based_on.second
+      strategy, options = generate_slug_based_on
+      options.merge!(strategy) if strategy.is_a? Hash
 
-      if !slug_generation_strategy.is_a?(Array) && !slug_generation_strategy.is_a?(Hash) && !slug_generation_strategy.is_a?(Symbol)
-        return [DEFAULT_SLUG_GENERATION_STRATEGY]
-      end
-
-      if slug_generation_strategy.is_a?(Symbol)
-        if slug_generation_strategy == :id
-          return [DEFAULT_SLUG_GENERATION_STRATEGY]
+      if strategy.is_a?(Symbol)
+        if strategy == :id
+          return [:compute_slug_as_string, options]
         else
-          return [:compute_slug_based_on_attribute, slug_generation_strategy]
+          return [:compute_slug_based_on_attribute, strategy]
         end
       end
 
-      if slug_generation_strategy.include?(:attribute)
-        which_attribute = slug_generation_strategy.dig(:attribute)
-        return [:compute_slug_based_on_attribute, which_attribute]
-
-      elsif slug_generation_strategy.include?(:id)
-        return_as = slug_generation_strategy.dig(:id)
-
-        if return_as == :hex_string
-          return [:compute_slug_as_string]
-        elsif return_as == :number
-          return [:compute_slug_as_number]
-        else
-          return [DEFAULT_SLUG_GENERATION_STRATEGY]
+      if strategy.is_a?(Hash)
+        if strategy.key?(:id)
+          case strategy[:id]
+          when :hex_string
+            return [:compute_slug_as_string, options]
+          when :number
+            return [:compute_slug_as_number, options]
+          else
+            return [DEFAULT_SLUG_GENERATION_STRATEGY, options]
+          end
+        elsif strategy.key?(:attribute)
+          return [:compute_slug_based_on_attribute, strategy[:attribute], options]
         end
-
-      else
-        return [DEFAULT_SLUG_GENERATION_STRATEGY]
       end
+
+      [DEFAULT_SLUG_GENERATION_STRATEGY, options]
     end
 
     def slug_persisted?
