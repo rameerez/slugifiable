@@ -2,7 +2,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable)
 
-Automatically generates unique slugs for your records, so you can expose them in SEO-friendly URLs.
+Automatically generates unique slugs for your Rails' model records, so you can expose SEO-friendly URLs.
 
 Example:
 ```
@@ -13,19 +13,19 @@ Where `big-red-backpack-321678` is the slug.
 
 `slugifiable` can generate:
 - Slugs like `"big-red-backpack"` or `"big-red-backpack-321678"`: unique, string-based slugs based on any attribute, such as `product.name`
-- Slugs like `"d4735e3a265"`: unique and random **hex string slugs**
-- Slugs like `321678`: unique and random **number-only slugs**
+- Slugs like `"d4735e3a265"`: unique **hex string slugs**
+- Slugs like `321678`: unique **number-only slugs**
 
 ## Why
 
-When building URLs, especially when building SEO-friendly URLs, we usually need to expose something to identify a record, like:
+When building URLs, especially when building SEO-friendly URLs, we usually need to expose _something_ to identify a record, like:
 ```
 https://myapp.com/products/123
 ```
 
-The problem is exposing internal IDs is not usually good practice. It can give away how many records you have in the database, it could also be an attack vector, and it just feels off.
+But exposing IDs is not usually good practice. It can give away how many records you have in the database, it could also be an attack vector, and it just feels off.
 
-It would be much better to have a random string or number instead, while still remaining unique and identifiable:
+It would be much better to have a random-like string or number instead, while still remaining unique and identifiable:
 ```
 https://myapp.com/products/321678
 
@@ -34,12 +34,12 @@ https://myapp.com/products/321678
 https://myapp.com/products/d4735e3a265
 ```
 
-Or better yet, use other attribute (like `product.name`), which makes a human-readable and SEO-friendly URL, like:
+Or better yet, use other instance attribute (like `product.name`) to build the slug:
 ```
 https://myapp.com/products/big-red-backpack
 ```
 
-`slugifiable` takes care of building these slugs automatically for you.
+`slugifiable` takes care of building all these kinds of slugs for you.
 
 ## Installation
 
@@ -50,14 +50,14 @@ gem 'slugifiable'
 
 Then run `bundle install`.
 
-After installing the gem, add `include Slugifiable::Model` to any model you want to provide with slugs, like this:
+After installing the gem, add `include Slugifiable::Model` to any ActiveRecord model, like this:
 ```ruby
 class Product < ApplicationRecord
   include Slugifiable::Model # Adding this provides all the required slug-related methods to your model
 end
 ```
 
-Then you can, for example, get the slug for a company like this:
+Then you can, for example, get the slug for a product like this:
 ```ruby
 Product.first.slug
 => "4e07408562b"
@@ -71,10 +71,24 @@ class Product < ApplicationRecord
 end
 ```
 
-And this will generate slugs based on your `Company` instance `name`, like:
+And this will generate slugs based on your `Product` instance `name`, like:
 ```ruby
 Product.first.slug
 => "big-red-backpack"
+```
+
+If you're generating slugs based off the model `id`, you can also set a desired length:
+```ruby
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :id, length: 6
+end
+```
+
+Which would return something like:
+```ruby
+Product.first.slug
+=> "6b86b2"
 ```
 
 More details in the "How to use" section.
@@ -101,7 +115,7 @@ When a model has a `slug` attribute, `slugifiable` automatically generates a slu
 
 ### Define how slugs are generated
 
-By default, when you include `Slugifiable::Model`, slugs will be generated as a string based off the record `id`
+By default, when you include `Slugifiable::Model`, slugs will be generated as a random-looking string based off the record `id` (SHA hash)
 
 `slugifiable` supports both `id` and `uuid`.
 
@@ -112,19 +126,26 @@ generate_slug_based_on id: :hex_string
 
 Which returns slugs like: `d4735e3a265`
 
-You can get number-only slugs with:
+If you don't like hex strings, you can get number-only slugs with:
 ```ruby
 generate_slug_based_on id: :number
 ```
 
-Which will return slugs like: `321678`
+Which will return slugs like: `321678` – nonconsecutive, nonincremental, not a total count.
 
-You can also specify an attribute to base your slugs off of, if you want to create SEO-friendly slugs and expose that attribute publicly. For example:
+When you're generating obfuscated slugs (based on `id`), you can specify a desired slug length:
+```ruby
+generate_slug_based_on id: :number, length: 3
+```
+
+The length should be a positive number between 1 and 64.
+
+If instead of obfuscated slugs you want human-readable slugs, you can specify an attribute to base your slugs off of. For example:
 ```ruby
 generate_slug_based_on :name
 ```
 
-Will look for a `name` attribute in your model, and use its value to generate the slug. So if you have a product like:
+Will look for a `name` attribute in your instance, and use its value to generate the slug. So if you have a product like:
 ```ruby
 Product.first.name
 => "Big Red Backpack"
