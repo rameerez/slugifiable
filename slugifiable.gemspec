@@ -8,13 +8,13 @@ Gem::Specification.new do |spec|
   spec.authors = ["rameerez"]
   spec.email = ["rubygems@rameerez.com"]
 
-  spec.summary = "Easily generate unique and SEO optimized slugs for your records, based on any attribute"
-  spec.description = "Automatically generates unique and SEO-friendly slugs for your model records, so you can expose them in URLs. Allows for string and number-based slugs."
+  spec.summary = "Easily generate unique and SEO optimized slugs for your Rails ActiveRecord model records, based on any attribute"
+  spec.description = "Automatically generates unique and SEO-friendly slugs for your Rails ActiveRecord model records, so you can expose them in URLs. Allows for string and number-based slugs."
   spec.homepage = "https://github.com/rameerez/slugifiable"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.0.0"
 
-  # spec.metadata["allowed_push_host"] = "https://rubygems.org"
+  spec.metadata["allowed_push_host"] = "https://rubygems.org"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/rameerez/slugifiable"
