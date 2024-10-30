@@ -53,6 +53,8 @@ class Product < ApplicationRecord
 end
 ```
 
+That's it!
+
 Then you can, for example, get the slug for a product like this:
 ```ruby
 Product.first.slug
