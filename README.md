@@ -18,19 +18,15 @@ Where `big-red-backpack-321678` is the slug.
 
 ## Why
 
-When building URLs, especially when building SEO-friendly URLs, we usually need to expose _something_ to identify a record, like:
+When building Rails apps, we usually need to expose _something_ in the URL to identify a record, like:
 ```
 https://myapp.com/products/123
 ```
 
-But exposing IDs is not usually good practice. It can give away how many records you have in the database, it could also be an attack vector, and it just feels off.
+But exposing IDs (like `123`) is not usually good practice. It's not SEO-friendly, it can give away how many records you have in the database, it could also be an attack vector, and it just feels off.
 
 It would be much better to have a random-like string or number instead, while still remaining unique and identifiable:
 ```
-https://myapp.com/products/321678
-
-# or
-
 https://myapp.com/products/d4735e3a265
 ```
 
@@ -76,6 +72,8 @@ And this will generate slugs based on your `Product` instance `name`, like:
 Product.first.slug
 => "big-red-backpack"
 ```
+
+If your model has a `slug` attribute in the database, `slugifiable` will automatically generate a slug for that model upon instance creation, and save it to the DB.
 
 If you're generating slugs based off the model `id`, you can also set a desired length:
 ```ruby
