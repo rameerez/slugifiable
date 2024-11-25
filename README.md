@@ -77,6 +77,10 @@ Product.first.slug
 
 If your model has a `slug` attribute in the database, `slugifiable` will automatically generate a slug for that model upon instance creation, and save it to the DB.
 
+> [!IMPORTANT]
+> Your `slug` attribute **SHOULD NOT** have `null: false` in the migration / database. If it does, `slugifiable` will not be able to save the slug to the database, and will raise an error like `ERROR:  null value in column "slug" of relation "posts" violates not-null constraint (PG::NotNullViolation)`
+> This is because records are created without a slug, and the slug is generated later.
+
 If you're generating slugs based off the model `id`, you can also set a desired length:
 ```ruby
 class Product < ApplicationRecord
