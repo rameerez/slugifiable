@@ -1,8 +1,8 @@
-# 🐌 `slugifiable` - Rails gem to generate SEO-friendly slugs
+# 🐌 `slugifiable` - Generate SEO-friendly URL slugs
 
 [![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable)
 
-Automatically generates unique slugs for your Rails' model records, so you can expose SEO-friendly URLs.
+Ruby gem to automatically generate unique slugs for your Rails' model records, so you can expose SEO-friendly URLs.
 
 Example:
 ```
