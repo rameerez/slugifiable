@@ -161,6 +161,31 @@ Product.first.slug
 => "big-red-backpack"
 ```
 
+You can also use instance methods to generate more complex slugs. This is useful when you need to combine multiple attributes:
+```ruby
+class Event < ApplicationRecord
+  include Slugifiable::Model
+  belongs_to :location
+  
+  generate_slug_based_on :title_with_location
+
+  # The method can return any string - slugifiable will handle the parameterization
+  def title_with_location
+    if location.present?
+      "#{title} #{location.city} #{location.region}"  # Returns raw string, slugifiable parameterizes it
+    else
+      title
+    end
+  end
+end
+```
+
+This will generate slugs like:
+```ruby
+Event.first.slug
+=> "my-awesome-event-new-york-new-york"  # Automatically parameterized
+```
+
 There may be collisions if two records share the same name – but slugs should be unique! To resolve this, when this happens, `slugifiable` will append a unique string at the end to make the slug unique:
 ```ruby
 Product.first.slug

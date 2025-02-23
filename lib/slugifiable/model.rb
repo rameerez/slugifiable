@@ -28,6 +28,10 @@ module Slugifiable
     DEFAULT_SLUG_STRING_LENGTH = 11
     DEFAULT_SLUG_NUMBER_LENGTH = 6
 
+    # Maximum number of attempts to generate a unique slug
+    # before falling back to timestamp-based suffix
+    MAX_SLUG_GENERATION_ATTEMPTS = 10
+
     included do
       after_create :set_slug
       after_find :update_slug_if_nil
@@ -36,11 +40,14 @@ module Slugifiable
 
     class_methods do
       def generate_slug_based_on(strategy, options = {})
+        # Remove previous definition if it exists to avoid warnings
+        remove_method(:generate_slug_based_on) if method_defined?(:generate_slug_based_on)
+
+        # Define the method that returns the strategy
         define_method(:generate_slug_based_on) do
           [strategy, options]
         end
       end
-
     end
 
     def method_missing(missing_method, *args, &block)
@@ -54,7 +61,7 @@ module Slugifiable
     def compute_slug
       strategy, options = determine_slug_generation_method
 
-      length = options[:length] if options.is_a?(Hash) || nil
+      length = options[:length] if options.is_a?(Hash)
 
       if strategy == :compute_slug_based_on_attribute
         self.send(strategy, options)
@@ -74,11 +81,48 @@ module Slugifiable
     end
 
     def compute_slug_based_on_attribute(attribute_name)
-      return compute_slug_as_string unless self.attributes.include?(attribute_name.to_s)
+      # This method generates a slug from either:
+      # 1. A database column (e.g. generate_slug_based_on :title)
+      # 2. An instance method (e.g. generate_slug_based_on :title_with_location)
+      #
+      # Priority:
+      # - Database columns take precedence over methods with the same name
+      # - Falls back to methods if no matching column exists
+      # - Falls back to ID-based slug if neither exists
+      #
+      # Flow:
+      # 1. Check if source exists (DB column first, then method)
+      # 2. Get raw value
+      # 3. Parameterize (convert "My Title" -> "my-title")
+      # 4. Ensure uniqueness
+      # 5. Fallback to random number if anything fails
 
-      base_slug = self.send(attribute_name)&.to_s&.strip&.parameterize
-      base_slug = base_slug.presence || generate_random_number_based_on_id_hex
+      # First check if we can get a value from the database
+      has_attribute = self.attributes.include?(attribute_name.to_s)
 
+      # Only check for methods if no DB attribute exists
+      # We check all method types to be thorough
+      responds_to_method = !has_attribute && (
+        self.class.method_defined?(attribute_name) ||
+        self.class.private_method_defined?(attribute_name) ||
+        self.class.protected_method_defined?(attribute_name)
+      )
+
+      # If we can't get a value from either source, fallback to using the record's ID
+      return compute_slug_as_string unless has_attribute || responds_to_method
+
+      # Get and clean the raw value (e.g. "  My Title  " -> "My Title")
+      # Works for both DB attributes and methods thanks to Ruby's send
+      raw_value = self.send(attribute_name)
+      return generate_random_number_based_on_id_hex if raw_value.nil?
+
+      # Convert to URL-friendly format
+      # e.g. "My Title" -> "my-title"
+      base_slug = raw_value.to_s.strip.parameterize
+      return generate_random_number_based_on_id_hex if base_slug.blank?
+
+      # Handle duplicate slugs by adding a random suffix if needed
+      # e.g. "my-title" -> "my-title-123456"
       unique_slug = generate_unique_slug(base_slug)
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
@@ -96,13 +140,21 @@ module Slugifiable
       return slug_candidate unless slug_persisted?
 
       # Collision resolution logic:
+      # Try up to MAX_SLUG_GENERATION_ATTEMPTS times with random suffixes
+      # This prevents infinite loops while still giving us good odds
+      # of finding a unique slug
+      attempts = 0
 
-      count = 0
+      while self.class.exists?(slug: slug_candidate) && attempts < MAX_SLUG_GENERATION_ATTEMPTS
+        attempts += 1
+        random_suffix = compute_slug_as_number
+        slug_candidate = "#{base_slug}-#{random_suffix}"
+      end
 
-      while self.class.exists?(slug: slug_candidate)
-        count += 1
-        # slug_candidate = "#{base_slug}-#{count}"
-        slug_candidate = "#{base_slug}-#{compute_slug_as_number}"
+      # If we couldn't find a unique slug after MAX_SLUG_GENERATION_ATTEMPTS,
+      # append timestamp to ensure uniqueness
+      if attempts == MAX_SLUG_GENERATION_ATTEMPTS
+        slug_candidate = "#{base_slug}-#{Time.current.to_i}"
       end
 
       slug_candidate
