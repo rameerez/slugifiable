@@ -9,6 +9,12 @@ class Slugifiable::ModelTest < Minitest::Test
     # Reset any previous slug generation strategy
     TestModel.class_eval do
       remove_method(:generate_slug_based_on) if method_defined?(:generate_slug_based_on)
+
+      # Remove test-specific methods to avoid redefinition warnings
+      remove_method(:nil_method) if method_defined?(:nil_method)
+      remove_method(:custom_title) if method_defined?(:custom_title)
+      remove_method(:private_title) if private_method_defined?(:private_title)
+      remove_method(:protected_title) if protected_method_defined?(:protected_title)
     end
   end
 

@@ -9,6 +9,13 @@ class Slugifiable::ExtensiveModelTest < Minitest::Test
     # Reset any previous slug generation strategy on TestModel
     TestModel.class_eval do
       remove_method(:generate_slug_based_on) if method_defined?(:generate_slug_based_on)
+
+      # Remove test-specific methods to avoid redefinition warnings
+      remove_method(:custom_title) if method_defined?(:custom_title)
+      remove_method(:nil_method) if method_defined?(:nil_method)
+      remove_method(:numeric_title) if method_defined?(:numeric_title)
+      remove_method(:private_title) if private_method_defined?(:private_title)
+      remove_method(:protected_title) if protected_method_defined?(:protected_title)
     end
   end
 
@@ -32,7 +39,7 @@ class Slugifiable::ExtensiveModelTest < Minitest::Test
   end
 
   def test_slug_not_updated_if_present_and_id_unchanged
-    # If slug is already set (and id hasn’t changed), set_slug shouldn’t alter it.
+    # If slug is already set (and id hasn't changed), set_slug shouldn't alter it.
     model = TestModel.create!(title: "Original Title")
     orig_slug = model.slug
     model.update!(title: "New Title")  # change a non-slug attribute
