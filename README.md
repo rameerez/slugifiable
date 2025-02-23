@@ -1,4 +1,4 @@
-# 🐌 `slugifiable` - Generate SEO-friendly URL slugs
+# 🐌 `slugifiable` - Generate SEO-optimized URL slugs
 
 [![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable)
 
