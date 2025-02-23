@@ -183,7 +183,7 @@ end
 This will generate slugs like:
 ```ruby
 Event.first.slug
-=> "my-awesome-event-new-york-new-york"  # Automatically parameterized
+=> "my-awesome-event-new-york"  # Automatically parameterized
 ```
 
 There may be collisions if two records share the same name – but slugs should be unique! To resolve this, when this happens, `slugifiable` will append a unique string at the end to make the slug unique:
