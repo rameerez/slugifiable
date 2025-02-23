@@ -192,6 +192,25 @@ Product.first.slug
 => "big-red-backpack-321678"
 ```
 
+## Testing
+
+The gem includes a comprehensive test suite that covers:
+
+- Default slug generation behavior
+- Attribute-based slug generation
+- Method-based slug generation (including private/protected methods)
+- Collision resolution and uniqueness handling
+- Special cases and edge conditions
+
+To run the tests:
+
+```bash
+bundle install
+bundle exec rake test
+```
+
+The test suite uses SQLite3 in-memory database and requires no additional setup.
+
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
