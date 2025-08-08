@@ -1,0 +1,13 @@
+# Package Information for pkg-config
+
+prefix=/workspace/vendor/bundle/ruby/3.3.0/gems/sqlite3-1.7.3/ports/x86_64-linux-gnu/sqlite3/3.45.2
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: SQLite
+Description: SQL database engine
+Version: 3.45.2
+Libs: -L${libdir} -lsqlite3
+Libs.private: -lz -lm 
+Cflags: -I${includedir}
