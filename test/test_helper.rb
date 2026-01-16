@@ -59,3 +59,38 @@ class TestModelWithoutSlug < ActiveRecord::Base
   # Re-add any other validations your model might need here
   # (none in our test case)
 end
+
+# Helper module for resetting test model state
+module SlugifiableTestHelper
+  # List of methods that tests might define on TestModel that need cleanup
+  CUSTOM_TEST_METHODS = %i[
+    generate_slug_based_on
+    custom_title
+    custom_slug_method
+    private_title
+    protected_title
+    nil_method
+    numeric_title
+    slug_source
+    virtual_attribute
+    title_with_location
+  ].freeze
+
+  def self.reset_test_model!
+    CUSTOM_TEST_METHODS.each do |method_name|
+      TestModel.class_eval do
+        remove_method(method_name) if method_defined?(method_name)
+        remove_method(method_name) if private_method_defined?(method_name)
+        remove_method(method_name) if protected_method_defined?(method_name)
+      end
+    end
+
+    CUSTOM_TEST_METHODS.each do |method_name|
+      TestModelWithoutSlug.class_eval do
+        remove_method(method_name) if method_defined?(method_name)
+        remove_method(method_name) if private_method_defined?(method_name)
+        remove_method(method_name) if protected_method_defined?(method_name)
+      end
+    end
+  end
+end
