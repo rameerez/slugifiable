@@ -5,6 +5,10 @@ Bundler.setup
 
 $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 
+# SimpleCov must be loaded BEFORE any application code
+# Configuration is auto-loaded from .simplecov file
+require "simplecov"
+
 # Rails/ActiveSupport dependencies first
 require "active_support"
 require "active_support/concern"
