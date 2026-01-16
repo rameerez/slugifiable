@@ -1,6 +1,9 @@
 # 🐌 `slugifiable` - Generate SEO-optimized URL slugs
 
-[![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable)
+[![Gem Version](https://badge.fury.io/rb/slugifiable.svg)](https://badge.fury.io/rb/slugifiable) [![Build Status](https://github.com/rameerez/slugifiable/workflows/Tests/badge.svg)](https://github.com/rameerez/slugifiable/actions)
+
+> [!TIP]
+> **🚀 Ship your next Rails app 10x faster!** I've built **[RailsFast](https://railsfast.com)**, a production-ready Rails boilerplate template that comes with everything you need to launch a software business in days, not weeks. Go [check it out](https://railsfast.com)!
 
 Ruby gem to automatically generate unique slugs for your Rails' model records, so you can expose SEO-friendly URLs.
 
