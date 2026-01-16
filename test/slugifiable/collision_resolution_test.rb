@@ -94,19 +94,18 @@ class Slugifiable::CollisionResolutionTest < Minitest::Test
     assert suffix.match?(/^\d+$/), "Suffix should be numeric: got #{suffix}"
   end
 
-  def test_suffix_comes_from_id_based_number
+  def test_suffix_is_random_number
     TestModel.class_eval do
       generate_slug_based_on :title
     end
 
-    TestModel.create!(title: "ID Suffix")  # First record takes "id-suffix"
-    model2 = TestModel.create!(title: "ID Suffix")
+    TestModel.create!(title: "Random Suffix")  # First record takes "random-suffix"
+    model2 = TestModel.create!(title: "Random Suffix")
 
-    # The suffix is computed from model2's id
-    expected_suffix = (Digest::SHA2.hexdigest(model2.id.to_s).hex % (10 ** Slugifiable::Model::DEFAULT_SLUG_NUMBER_LENGTH)).to_s
-    expected_slug = "id-suffix-#{expected_suffix}"
-
-    assert_equal expected_slug, model2.slug
+    # The suffix is now a truly random number (SecureRandom), not id-based
+    # Just verify it has the expected format: base-slug-<digits>
+    assert_match(/\Arandom-suffix-\d+\z/, model2.slug)
+    assert model2.slug.start_with?("random-suffix-")
   end
 
   # ============================================================================
@@ -128,7 +127,8 @@ class Slugifiable::CollisionResolutionTest < Minitest::Test
       frozen_time = Time.current.to_i
       Time.stub(:current, Time.at(frozen_time)) do
         model = TestModel.create!(title: "Timestamp Test")
-        assert_match(/\Atimestamp-test-#{frozen_time}\z/, model.slug)
+        # Timestamp fallback now includes random suffix for extra uniqueness
+        assert_match(/\Atimestamp-test-#{frozen_time}-\d+\z/, model.slug)
       end
     ensure
       TestModel.singleton_class.send(:remove_method, :exists?)

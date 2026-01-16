@@ -28,6 +28,11 @@ module Slugifiable
     DEFAULT_SLUG_STRING_LENGTH = 11
     DEFAULT_SLUG_NUMBER_LENGTH = 6
 
+    # SHA256 produces 64 hex characters
+    MAX_HEX_STRING_LENGTH = 64
+    # 10^18 fits safely in a 64-bit integer
+    MAX_NUMBER_LENGTH = 18
+
     # Maximum number of attempts to generate a unique slug
     # before falling back to timestamp-based suffix
     MAX_SLUG_GENERATION_ATTEMPTS = 10
@@ -71,12 +76,12 @@ module Slugifiable
     end
 
     def compute_slug_as_string(length = DEFAULT_SLUG_STRING_LENGTH)
-      length ||= DEFAULT_SLUG_STRING_LENGTH
+      length = normalize_length(length, DEFAULT_SLUG_STRING_LENGTH, MAX_HEX_STRING_LENGTH)
       (Digest::SHA2.hexdigest self.id.to_s).first(length)
     end
 
     def compute_slug_as_number(length = DEFAULT_SLUG_NUMBER_LENGTH)
-      length ||= DEFAULT_SLUG_NUMBER_LENGTH
+      length = normalize_length(length, DEFAULT_SLUG_NUMBER_LENGTH, MAX_NUMBER_LENGTH)
       generate_random_number_based_on_id_hex(length)
     end
 
@@ -129,8 +134,14 @@ module Slugifiable
 
     private
 
+    def normalize_length(length, default, max)
+      length = length.to_i
+      return default if length <= 0
+      [length, max].min
+    end
+
     def generate_random_number_based_on_id_hex(length = DEFAULT_SLUG_NUMBER_LENGTH)
-      length ||= DEFAULT_SLUG_NUMBER_LENGTH
+      length = normalize_length(length, DEFAULT_SLUG_NUMBER_LENGTH, MAX_NUMBER_LENGTH)
       ((Digest::SHA2.hexdigest(id.to_s)).hex % (10 ** length))
     end
 
@@ -147,14 +158,16 @@ module Slugifiable
 
       while self.class.exists?(slug: slug_candidate) && attempts < MAX_SLUG_GENERATION_ATTEMPTS
         attempts += 1
-        random_suffix = compute_slug_as_number
+        # Use SecureRandom for truly random suffixes during collision resolution
+        # This ensures each attempt tries a different suffix
+        random_suffix = SecureRandom.random_number(10 ** DEFAULT_SLUG_NUMBER_LENGTH)
         slug_candidate = "#{base_slug}-#{random_suffix}"
       end
 
       # If we couldn't find a unique slug after MAX_SLUG_GENERATION_ATTEMPTS,
-      # append timestamp to ensure uniqueness
+      # append timestamp + random to ensure uniqueness
       if attempts == MAX_SLUG_GENERATION_ATTEMPTS
-        slug_candidate = "#{base_slug}-#{Time.current.to_i}"
+        slug_candidate = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
       end
 
       slug_candidate
@@ -185,7 +198,7 @@ module Slugifiable
             return [DEFAULT_SLUG_GENERATION_STRATEGY, options]
           end
         elsif strategy.key?(:attribute)
-          return [:compute_slug_based_on_attribute, strategy[:attribute], options]
+          return [:compute_slug_based_on_attribute, strategy[:attribute]]
         end
       end
 

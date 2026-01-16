@@ -136,8 +136,8 @@ class Slugifiable::BugVerificationTest < Minitest::Test
     begin
       model = TestModel.create!(title: "Timestamp Test")
 
-      # Should fall back to timestamp after MAX_SLUG_GENERATION_ATTEMPTS
-      assert_match(/\Atimestamp-test-\d+\z/, model.slug, "Should include timestamp suffix")
+      # Should fall back to timestamp + random suffix after MAX_SLUG_GENERATION_ATTEMPTS
+      assert_match(/\Atimestamp-test-\d+-\d+\z/, model.slug, "Should include timestamp and random suffix")
       assert attempt_count >= Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS
     ensure
       TestModel.singleton_class.send(:remove_method, :exists?)
@@ -256,16 +256,15 @@ class Slugifiable::BugVerificationTest < Minitest::Test
     refute_nil model.slug
   end
 
-  def test_negative_length_for_hex_string_raises_error
+  def test_negative_length_for_hex_string_uses_default
     TestModel.class_eval do
       generate_slug_based_on id: :hex_string, length: -5
     end
 
-    # Negative length should raise ArgumentError from String#first
-    # This documents current behavior - the gem does not validate length parameter
-    assert_raises(ArgumentError) do
-      TestModel.create!(title: "Negative Length Test")
-    end
+    # Negative length is now handled gracefully - falls back to default length
+    model = TestModel.create!(title: "Negative Length Test")
+    refute_nil model.slug
+    assert_equal Slugifiable::Model::DEFAULT_SLUG_STRING_LENGTH, model.slug.length
   end
 
   def test_very_large_length_for_hex_string
