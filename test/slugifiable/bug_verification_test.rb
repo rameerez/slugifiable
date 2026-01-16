@@ -157,6 +157,22 @@ class Slugifiable::BugVerificationTest < Minitest::Test
     end
   end
 
+  def test_respond_to_slug_for_model_without_slug_column
+    # respond_to?(:slug) should return true even for models without slug column
+    # This ensures proper Ruby behavior when method_missing is implemented
+    model = TestModelWithoutSlug.create!(title: "Test")
+
+    assert model.respond_to?(:slug), "respond_to?(:slug) should return true"
+    refute_nil model.slug
+  end
+
+  def test_respond_to_slug_for_model_with_slug_column
+    model = TestModel.create!(title: "Test")
+
+    assert model.respond_to?(:slug), "respond_to?(:slug) should return true"
+    refute_nil model.slug
+  end
+
   def test_method_missing_with_arguments
     model = TestModelWithoutSlug.create!(title: "Test")
 

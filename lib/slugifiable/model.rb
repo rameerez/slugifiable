@@ -56,11 +56,15 @@ module Slugifiable
     end
 
     def method_missing(missing_method, *args, &block)
-      if missing_method.to_s == "slug" && !self.methods.include?(:slug)
+      if missing_method.to_s == "slug" && !has_slug_method?
         compute_slug
       else
         super
       end
+    end
+
+    def respond_to_missing?(method_name, include_private = false)
+      method_name.to_s == "slug" && !has_slug_method? || super
     end
 
     def compute_slug
@@ -206,7 +210,12 @@ module Slugifiable
     end
 
     def slug_persisted?
-      self.methods.include?(:slug) && self.attributes.include?("slug")
+      has_slug_method? && self.attributes.include?("slug")
+    end
+
+    def has_slug_method?
+      # Check if slug method exists from ActiveRecord (not from method_missing)
+      self.class.method_defined?(:slug) || self.class.private_method_defined?(:slug)
     end
 
     def set_slug
