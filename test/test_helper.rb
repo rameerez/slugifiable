@@ -17,6 +17,7 @@ require "slugifiable"
 
 # Finally test framework
 require "minitest/autorun"
+require "minitest/mock"
 
 # Silence the SQL output
 ActiveRecord::Base.logger = Logger.new(nil)

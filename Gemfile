@@ -7,6 +7,11 @@ gemspec
 
 gem "rake", "~> 13.0"
 
-gem "minitest", "~> 5.0"
-gem "sqlite3", "~> 1.4"
-gem "benchmark", "~> 0.3.0" # For ActiveRecord migrations
+group :development, :test do
+  gem "appraisal"
+  gem "minitest", "~> 6.0"
+  gem "minitest-mock"
+  gem "rack-test"
+  gem "simplecov", require: false
+  gem "sqlite3", ">= 2.1"
+end
