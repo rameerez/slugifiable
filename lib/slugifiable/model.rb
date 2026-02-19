@@ -416,11 +416,7 @@ module Slugifiable
 
         attempts += 1
         if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
-          if on_exhaustion
-            on_exhaustion.call
-          else
-            raise
-          end
+          on_exhaustion ? on_exhaustion.call : raise
         else
           pre_retry_action.call
           retry
