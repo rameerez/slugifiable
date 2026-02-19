@@ -267,6 +267,9 @@ module Slugifiable
     end
 
     def set_slug_with_retry
+      # NOTE: The old code checked `id_changed? || slug.blank?`. The `id_changed?`
+      # guard is unnecessary in `after_create` — the ID always just changed from nil.
+      # It would only matter if a trigger reassigned the ID post-INSERT, which is rare.
       return unless slug.blank?
 
       # For attribute-based slugs, compute_slug -> generate_unique_slug already
