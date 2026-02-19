@@ -342,9 +342,15 @@ module Slugifiable
       @slug_column_not_null = self.class.columns_hash["slug"]&.null == false
     end
 
-    # Generates a slug for retry attempts.
-    # For attribute-based strategies, compute_slug calls generate_unique_slug which
-    # adds random suffixes on each call, ensuring retry attempts try different values.
+    # Generates a slug for retry attempts during INSERT-time race conditions.
+    #
+    # Override this method in subclasses to customize retry slug generation.
+    # For example, to use a different suffix strategy or incorporate additional
+    # uniqueness factors.
+    #
+    # Default behavior: delegates to compute_slug, which for attribute-based
+    # strategies calls generate_unique_slug (adds random suffixes on each call),
+    # ensuring retry attempts try different values.
     #
     # NOTE: ID-based slug collisions are impossible (two records can't share the same ID),
     # so this method is only meaningful for attribute-based strategies where concurrent

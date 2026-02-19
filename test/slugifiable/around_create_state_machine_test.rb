@@ -49,8 +49,12 @@ class Slugifiable::AroundCreateStateMachineTest < Minitest::Test
     assert record.persisted?, "Record should be persisted after create"
     refute record.new_record?, "Record should not be new_record after create"
 
-    # We should have seen states from multiple attempts
-    assert state_tracker.states_seen.length >= 1, "Should have tracked at least one state"
+    # CRITICAL: Verify the second attempt actually ran.
+    # This catches Rails-upgrade breakage where around_create + retry stops working.
+    # If this changes from 2 to 1, it means the retry mechanism is broken.
+    assert_equal 2, state_tracker.states_seen.length,
+      "Should have exactly 2 attempts: 1 failed + 1 successful retry. " \
+      "If this is 1, the around_create multi-yield behavior may have changed in Rails."
 
     # On first attempt, should be new_record with no ID yet
     first_state = state_tracker.states_seen.first
