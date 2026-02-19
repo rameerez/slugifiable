@@ -208,7 +208,7 @@ module Slugifiable
 
       # If we couldn't find a unique slug after MAX_SLUG_GENERATION_ATTEMPTS,
       # append timestamp + random to ensure uniqueness
-      if attempts == MAX_SLUG_GENERATION_ATTEMPTS
+      if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
         slug_candidate = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.hex(4)}"
       end
 
