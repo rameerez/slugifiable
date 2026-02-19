@@ -77,7 +77,6 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
 
     # Track retry attempts
     call_count = 0
-    original_compute = model.method(:compute_slug)
 
     model.define_singleton_method(:compute_slug) do
       call_count += 1

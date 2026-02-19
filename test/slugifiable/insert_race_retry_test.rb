@@ -78,7 +78,7 @@ class Slugifiable::InsertRaceRetryTest < Minitest::Test
       race_model.create!(title: "Always Collides")
     end
 
-    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS + 1, race_model.insert_attempts
+    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS, race_model.insert_attempts
   end
 
   def test_not_null_slug_model_still_generates_unique_slugs_for_duplicate_titles

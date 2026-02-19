@@ -226,24 +226,20 @@ module Slugifiable
     end
 
     def set_slug_with_retry
-      attempts = 0
-
-      begin
-        self.slug = compute_slug if slug.blank? || (respond_to?(:id_changed?) && id_changed?)
+      with_slug_retry(-> { self.slug = nil }) do
+        self.slug = compute_slug if slug.blank? || id_changed?
         self.save
-      rescue ActiveRecord::RecordNotUnique => e
-        # Only retry on slug-related unique violations
-        raise unless slug_unique_violation?(e)
-
-        attempts += 1
-        raise if attempts > MAX_SLUG_GENERATION_ATTEMPTS
-
-        # Clear slug to force regeneration with new random suffix
-        self.slug = nil
-        retry
       end
     end
 
+    # Detects if a RecordNotUnique error is related to the slug column.
+    #
+    # NOTE: This uses a simple substring match on the error message, which may
+    # produce false positives for columns/tables containing "slug" in their name
+    # (e.g., "slug_version", "reslugged_items"). This trade-off is intentional:
+    # - PostgreSQL includes constraint names like "index_users_on_slug"
+    # - MySQL/SQLite include column names in violation messages
+    # - A more precise check would require adapter-specific parsing
     def slug_unique_violation?(error)
       error.message.to_s.downcase.include?("slug")
     end
@@ -251,20 +247,30 @@ module Slugifiable
     # Handle INSERT-time slug races for models that persist slugs at create-time
     # (e.g., NOT NULL slug columns with before_validation slug generation).
     def retry_create_on_slug_unique_violation
+      return yield unless slug_persisted?
+
+      # Recompute slug before retry because create-callback retries do not
+      # re-run validation callbacks.
+      with_slug_retry(-> { self.slug = compute_slug }) do
+        yield
+      end
+    end
+
+    # Shared retry logic for slug unique constraint violations.
+    # Retries up to MAX_SLUG_GENERATION_ATTEMPTS times, calling pre_retry_action
+    # before each retry to regenerate the slug.
+    def with_slug_retry(pre_retry_action)
       attempts = 0
 
       begin
         yield
       rescue ActiveRecord::RecordNotUnique => e
-        # Only retry slug collisions for persisted-slug models.
-        raise unless slug_persisted? && slug_unique_violation?(e)
+        raise unless slug_unique_violation?(e)
 
         attempts += 1
-        raise if attempts > MAX_SLUG_GENERATION_ATTEMPTS
+        raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
 
-        # Recompute immediately because create-callback retries do not re-run
-        # validation callbacks.
-        self.slug = compute_slug if has_slug_method?
+        pre_retry_action.call
         retry
       end
     end
