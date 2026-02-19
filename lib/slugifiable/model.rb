@@ -139,7 +139,11 @@ module Slugifiable
 
         base_slug
       else
-        # For ID-based strategies, return the deterministic hash
+        # For ID-based strategies, return the deterministic hash.
+        # NOTE: This path should never execute in practice since ID-based slug
+        # collisions are impossible (two records can't have the same ID). If it
+        # ever did, the exhaustion fallback would produce a double-suffixed slug
+        # like "d4735e3a265-1234567890-abcd1234".
         compute_slug
       end
     end
@@ -275,6 +279,9 @@ module Slugifiable
       #
       # Fallback when all retries exhausted: use timestamp suffix for guaranteed uniqueness.
       # Uses compute_base_slug to avoid double-suffixing (compute_slug includes random suffixes).
+      # NOTE: The exhaustion fallback uses save! and does not retry on failure. If this
+      # raises (unlikely given timestamp+random uniqueness), the exception propagates.
+      # This is intentional — exhaustion indicates a systemic issue warranting attention.
       on_exhaustion = -> {
         base_slug = compute_base_slug
         self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.hex(4)}"
@@ -353,12 +360,11 @@ module Slugifiable
       end
     end
 
-    # Memoize at class level since columns_hash doesn't change at runtime.
-    # This avoids computing the same value for every instance.
+    # Check if the slug column is NOT NULL. This uses ActiveRecord's schema cache
+    # (columns_hash), which is already memoized. We don't add our own memoization
+    # to avoid staleness issues in development when schema changes.
     def slug_column_not_null?
-      klass = self.class
-      return klass.instance_variable_get(:@slug_column_not_null) if klass.instance_variable_defined?(:@slug_column_not_null)
-      klass.instance_variable_set(:@slug_column_not_null, klass.columns_hash["slug"]&.null == false)
+      self.class.columns_hash["slug"]&.null == false
     end
 
     # Generates a slug for retry attempts during INSERT-time race conditions.
