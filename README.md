@@ -119,6 +119,15 @@ end
 > [!NOTE]
 > When using NOT NULL slug columns, `slugifiable` handles race conditions automatically. If two processes try to create records with the same slug simultaneously, the second one will retry with a new random suffix.
 
+> [!CAUTION]
+> For NOT NULL slug columns, retries re-run the `around_create` callback chain. If a slug collision happens, your `before_create` callbacks will run again. Keep `before_create` callbacks idempotent (or move side effects to `after_create`/background jobs).
+
+> [!NOTE]
+> Retry handling is DB-constraint-driven (`RecordNotUnique`), not validation-driven. A validation-layer race that raises `RecordInvalid` will bubble up.
+
+> [!NOTE]
+> Slug collision detection matches errors containing `slug`/`_on_slug`. If your index uses a custom name that does not include those patterns, retries will not trigger and the exception will bubble up.
+
 If you're generating slugs based off the model `id`, you can also set a desired length:
 ```ruby
 class Product < ApplicationRecord

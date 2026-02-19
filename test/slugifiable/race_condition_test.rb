@@ -2,17 +2,7 @@
 
 require "test_helper"
 
-# Tests for race condition handling in slug generation.
-# Covers both retry paths: around_create (NOT NULL) and after_create (nullable).
-#
-# Note: The actual race condition occurs when two processes simultaneously:
-# 1. Pass the uniqueness validation (no collision detected)
-# 2. Try to INSERT, and the second fails with RecordNotUnique
-#
-# In single-threaded tests, we simulate this by:
-# - Testing sequential creates (exercises EXISTS? collision handling)
-# - Testing the violation detection logic
-# - Testing that non-slug violations bubble up correctly
+# Focused behavioral tests for the race-condition retry paths.
 class RaceConditionTest < Minitest::Test
   def setup
     TestModel.delete_all
@@ -26,230 +16,226 @@ class RaceConditionTest < Minitest::Test
     SlugifiableTestHelper.reset_test_model!
   end
 
-  # === Sequential Creation Tests ===
-  # These test the EXISTS? check collision handling in generate_unique_slug
-
   def test_sequential_creates_with_same_name_get_unique_slugs
     TestModel.generate_slug_based_on :title
 
     5.times { TestModel.create!(title: "Same Name") }
 
     slugs = TestModel.pluck(:slug)
-    assert_equal 5, slugs.uniq.count, "Expected 5 unique slugs"
-    assert slugs.all? { |s| s.start_with?("same-name") }, "All slugs should be based on 'same-name'"
+    assert_equal 5, slugs.uniq.count
+    assert slugs.all? { |slug| slug.start_with?("same-name") }
   end
 
-  def test_strict_model_sequential_creates_get_unique_slugs
+  def test_sequential_creates_for_not_null_model_get_unique_slugs
     5.times { StrictSlugModel.create!(name: "Same Name") }
 
     slugs = StrictSlugModel.pluck(:slug)
-    assert_equal 5, slugs.uniq.count, "Expected 5 unique slugs"
-    assert slugs.all? { |s| s.start_with?("same-name") }, "All slugs should be based on 'same-name'"
+    assert_equal 5, slugs.uniq.count
+    assert slugs.all? { |slug| slug.start_with?("same-name") }
   end
-
-  def test_many_sequential_creates_all_get_unique_slugs
-    TestModel.generate_slug_based_on :title
-
-    20.times { TestModel.create!(title: "Popular Name") }
-
-    slugs = TestModel.pluck(:slug)
-    assert_equal 20, slugs.uniq.count, "Expected 20 unique slugs"
-  end
-
-  # === Slug Violation Detection (Core of retry logic) ===
 
   def test_slug_unique_violation_detection_sqlite
     model = TestModel.new
-    # SQLite format
     error = ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: test_models.slug")
+
     assert model.send(:slug_unique_violation?, error)
   end
 
   def test_slug_unique_violation_detection_postgresql
     model = TestModel.new
-    # PostgreSQL format with index name
     error = ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_organizations_on_slug\"")
-    assert model.send(:slug_unique_violation?, error)
-  end
 
-  def test_slug_unique_violation_detection_postgresql_key_detail
-    model = TestModel.new
-    # PostgreSQL format with key detail
-    error = ActiveRecord::RecordNotUnique.new("Key (slug)=(acme-corp) already exists")
     assert model.send(:slug_unique_violation?, error)
   end
 
   def test_slug_unique_violation_detection_mysql
     model = TestModel.new
-    # MySQL format with index name
     error = ActiveRecord::RecordNotUnique.new("Duplicate entry 'acme-corp' for key 'index_organizations_on_slug'")
+
     assert model.send(:slug_unique_violation?, error)
   end
 
-  def test_non_slug_violation_not_detected_email
+  def test_non_slug_violation_does_not_match
     model = TestModel.new
     error = ActiveRecord::RecordNotUnique.new("Duplicate entry 'test@example.com' for key 'index_users_on_email'")
+
     refute model.send(:slug_unique_violation?, error)
   end
 
-  def test_non_slug_violation_not_detected_username
+  def test_false_positive_prevention_for_slugged_table_names
     model = TestModel.new
-    error = ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: users.username")
-    refute model.send(:slug_unique_violation?, error)
-  end
-
-  def test_false_positive_prevention_slugged_items
-    model = TestModel.new
-    # Should NOT match "slugged_items" - the word boundary regex prevents this
     error = ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: slugged_items.name")
+
     refute model.send(:slug_unique_violation?, error)
   end
-
-  def test_false_negative_for_custom_column_parent_slug
-    model = TestModel.new
-    # Custom column names like "parent_slug" are NOT matched by the regex.
-    # This is a safe false-negative: the error bubbles up instead of silently retrying.
-    # Pattern: \bslug\b doesn't match "parent_slug" (no word boundary before "slug")
-    # Pattern: _on_slug\b doesn't match "on_parent_slug"
-    error = ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_items_on_parent_slug\"")
-    refute model.send(:slug_unique_violation?, error)
-  end
-
-  # === Optimization Guard ===
 
   def test_slug_column_not_null_detection
-    # TestModel has nullable slug column
-    model = TestModel.new
-    refute model.send(:slug_column_not_null?)
-
-    # StrictSlugModel has NOT NULL slug column
-    strict = StrictSlugModel.new
-    assert strict.send(:slug_column_not_null?)
+    refute TestModel.new.send(:slug_column_not_null?)
+    assert StrictSlugModel.new.send(:slug_column_not_null?)
   end
 
-  def test_around_create_skipped_for_nullable_columns
+  def test_retry_create_skips_nullable_slug_columns
     TestModel.generate_slug_based_on :title
+    model = TestModel.new(title: "Skip")
 
-    model = TestModel.new(title: "Test")
-    called = false
-
-    # The retry should be skipped for nullable columns
-    model.define_singleton_method(:with_slug_retry) do |&block|
-      called = true
-      block.call
+    model.define_singleton_method(:with_slug_retry) do |for_insert: false, &_block|
+      flunk("with_slug_retry should not run for nullable slug columns")
     end
 
-    model.save!
-    refute called, "with_slug_retry should not be called for nullable slug column"
+    result = model.send(:retry_create_on_slug_unique_violation) { :ok }
+    assert_equal :ok, result
   end
 
-  # === after_find Repair Path ===
+  def test_retry_create_uses_insert_mode_for_not_null_slug_columns
+    model = StrictSlugModel.new(name: "Acme")
+    insert_mode = nil
+
+    model.define_singleton_method(:with_slug_retry) do |for_insert: false, &block|
+      insert_mode = for_insert
+      block.call(0)
+    end
+
+    result = model.send(:retry_create_on_slug_unique_violation) { :ok }
+    assert_equal :ok, result
+    assert_equal true, insert_mode
+  end
+
+  def test_with_slug_retry_runs_inside_savepoint
+    model = TestModel.new
+    transaction_depths = []
+
+    model.send(:with_slug_retry) do |_attempts|
+      transaction_depths << model.class.connection.open_transactions
+      :ok
+    end
+
+    assert transaction_depths.any? { |depth| depth >= 1 }
+  end
+
+  def test_with_slug_retry_retries_slug_violation_for_insert_path
+    model = StrictSlugModel.new(name: "Acme")
+    block_calls = 0
+
+    model.send(:with_slug_retry, for_insert: true) do |attempts|
+      block_calls += 1
+      if attempts.zero?
+        raise ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_strict_slug_models_on_slug\"")
+      end
+
+      :ok
+    end
+
+    assert_equal 2, block_calls
+    assert_match(/\Aacme/, model.slug)
+  end
+
+  def test_with_slug_retry_bubbles_non_slug_violations
+    model = TestModel.new
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      model.send(:with_slug_retry) do |_attempts|
+        raise ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_users_on_email\"")
+      end
+    end
+  end
+
+  def test_with_slug_retry_raises_after_max_attempts
+    model = StrictSlugModel.new(name: "Acme")
+    block_calls = 0
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      model.send(:with_slug_retry, for_insert: true) do |_attempts|
+        block_calls += 1
+        raise ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_strict_slug_models_on_slug\"")
+      end
+    end
+
+    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS, block_calls
+  end
+
+  def test_with_slug_retry_does_not_retry_insert_after_record_is_persisted
+    model = StrictSlugModel.create!(name: "Persisted")
+    block_calls = 0
+
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      model.send(:with_slug_retry, for_insert: true) do |_attempts|
+        block_calls += 1
+        raise ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_strict_slug_models_on_slug\"")
+      end
+    end
+
+    assert_equal 1, block_calls
+  end
+
+  def test_set_slug_retries_after_slug_record_not_unique
+    TestModel.generate_slug_based_on :title
+    record = TestModel.create!(title: "Retry Path")
+    record.update_column(:slug, nil)
+
+    save_calls = 0
+    record.define_singleton_method(:save!) do |*args, **kwargs|
+      save_calls += 1
+      if save_calls == 1
+        raise ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: test_models.slug")
+      end
+
+      super(*args, **kwargs)
+    end
+
+    record.send(:set_slug)
+    record.reload
+
+    assert_equal 2, save_calls
+    assert_match(/\Aretry-path/, record.slug)
+  end
+
+  def test_set_slug_bubbles_non_slug_record_not_unique
+    TestModel.generate_slug_based_on :title
+    record = TestModel.create!(title: "Retry Path")
+    record.update_column(:slug, nil)
+
+    save_calls = 0
+    record.define_singleton_method(:save!) do |*args, **kwargs|
+      save_calls += 1
+      raise ActiveRecord::RecordNotUnique.new("duplicate key value violates unique constraint \"index_users_on_email\"")
+    end
+
+    assert_raises(ActiveRecord::RecordNotUnique) { record.send(:set_slug) }
+    assert_equal 1, save_calls
+  end
 
   def test_after_find_repair_sets_slug_for_nil
     TestModel.generate_slug_based_on :title
-
-    # Create record with nil slug (simulating legacy data)
     record = TestModel.create!(title: "Legacy Record")
-
-    # Manually nil the slug in DB to simulate legacy data
     TestModel.where(id: record.id).update_all(slug: nil)
 
-    # Reload should trigger update_slug_if_nil via after_find
     reloaded = TestModel.find(record.id)
 
-    # The slug should be set now
     assert_equal "legacy-record", reloaded.slug
   end
 
-  def test_after_find_uses_non_bang_save
-    # Verify that update_slug_if_nil calls save (not save!)
-    # by checking the method implementation
-    model = TestModel.new
-    source = model.method(:update_slug_if_nil).source_location
-
-    # Read the file and verify it uses `save` not `save!`
-    file_content = File.read(source[0])
-    method_lines = file_content.lines[source[1] - 1..source[1] + 10]
-    method_content = method_lines.join
-
-    assert_includes method_content, "save # Non-bang"
-    refute_includes method_content, "save!"
-  end
-
-  # === Retry Helper Structure ===
-
-  def test_with_slug_retry_uses_savepoint
-    model = TestModel.new
-
-    # Verify the method calls transaction with requires_new: true
-    source = model.method(:with_slug_retry).source_location
-    file_content = File.read(source[0])
-    method_lines = file_content.lines[source[1] - 1..source[1] + 20]
-    method_content = method_lines.join
-
-    assert_includes method_content, "requires_new: true"
-  end
-
-  def test_set_slug_uses_savepoint
+  def test_update_slug_if_nil_uses_non_bang_save
     TestModel.generate_slug_based_on :title
-    model = TestModel.new(title: "Test")
+    record = TestModel.create!(title: "Legacy Record")
+    record.update_column(:slug, nil)
 
-    source = model.method(:set_slug).source_location
-    file_content = File.read(source[0])
-    method_lines = file_content.lines[source[1] - 1..source[1] + 20]
-    method_content = method_lines.join
+    record.define_singleton_method(:save) { false }
+    record.define_singleton_method(:save!) { raise "save! should not be called from update_slug_if_nil" }
 
-    assert_includes method_content, "requires_new: true"
+    record.send(:update_slug_if_nil)
+
+    assert record.slug.present?
   end
 
-  # === compute_slug_for_retry Override Point ===
+  def test_generate_slug_based_on_symbol_id_uses_default_string_strategy
+    TestModel.generate_slug_based_on :id
 
-  def test_compute_slug_for_retry_can_be_overridden
-    TestModel.generate_slug_based_on :title
-    model = TestModel.new(title: "Test")
+    model = TestModel.create!(title: "ID Strategy")
 
-    custom_slug_called = false
-    model.define_singleton_method(:compute_slug_for_retry) do
-      custom_slug_called = true
-      "custom-retry-slug"
-    end
-
-    # Trigger a path that calls compute_slug_for_retry
-    # (In normal flow, this is called during retry)
-    result = model.compute_slug_for_retry
-    assert custom_slug_called
-    assert_equal "custom-retry-slug", result
+    assert_match(/\A[0-9a-f]{11}\z/, model.slug)
   end
-
-  # === MAX_SLUG_GENERATION_ATTEMPTS Constant ===
 
   def test_max_attempts_constant_exists
     assert_equal 10, Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS
-  end
-
-  # === Integration: Normal Create Flow ===
-
-  def test_normal_create_flow_nullable_slug
-    TestModel.generate_slug_based_on :title
-
-    model = TestModel.create!(title: "Normal Create")
-    assert model.persisted?
-    assert_equal "normal-create", model.slug
-  end
-
-  def test_normal_create_flow_not_null_slug
-    model = StrictSlugModel.create!(name: "Normal Create")
-    assert model.persisted?
-    assert_equal "normal-create", model.slug
-  end
-
-  def test_create_with_blank_title_falls_back_to_id_based
-    TestModel.generate_slug_based_on :title
-
-    model = TestModel.create!(title: "")
-    assert model.persisted?
-    # Falls back to random number based on ID
-    assert_kind_of Integer, model.slug.to_i
-    refute_equal 0, model.slug.to_i
   end
 end

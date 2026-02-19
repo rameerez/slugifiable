@@ -8,17 +8,17 @@
 - `with_slug_retry` helper with PostgreSQL-safe savepoints (`requires_new: true`)
 - `slug_column_not_null?` optimization to skip savepoint overhead for nullable slug columns
 - `slug_unique_violation?` detection supporting SQLite, PostgreSQL, and MySQL error formats
-- `compute_slug_for_retry` protected method as override point for custom retry behavior
 
 ### Changed
-- `set_slug` now retries with savepoints on `RecordNotUnique` for slug collisions (after_create path)
+- `set_slug` now uses shared retry handling with savepoints on `RecordNotUnique` for slug collisions (after_create path)
 - Retry exhaustion raises `RecordNotUnique` instead of falling back to timestamp suffix (fail-fast behavior)
 - `update_slug_if_nil` explicitly uses non-bang `save` to avoid exceptions on read operations
 
 ### Known Limitations
-- **`before_create` callbacks re-execute on retry**: If a retry is needed, `before_create` callbacks run again. Design callbacks to be idempotent or use guards.
-- **`RecordInvalid` not retried**: Only DB-level `RecordNotUnique` triggers retry. Validation-level uniqueness errors do not retry (this is the race window the fix addresses).
-- **Custom index names**: If your slug unique index has a non-standard name that doesn't contain "slug" or "_on_slug", violations will bubble up instead of retrying.
+- **`around_create` retries rely on Rails internals**: The NOT NULL create retry path re-invokes the `around_create` callback chain. This behavior is covered by tests, but it is not explicitly documented as a public Rails callback contract.
+- **`before_create` callbacks will re-execute on retry**: If a retry is needed, `before_create` callbacks run again. Design callbacks to be idempotent or use guards.
+- **`RecordInvalid` is not retried**: Only DB-level `RecordNotUnique` triggers retry. A validation-layer uniqueness race that raises `RecordInvalid` will bubble up.
+- **Custom index names**: If your slug unique index has a non-standard name that doesn't contain `slug` or `_on_slug`, violations will bubble up instead of retrying.
 
 ## [0.2.0] - 2026-01-16
 

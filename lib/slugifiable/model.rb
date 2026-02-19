@@ -137,14 +137,6 @@ module Slugifiable
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
 
-    protected
-
-    # Override this method to customize slug regeneration on retry.
-    # By default, just calls compute_slug which uses SecureRandom for uniqueness.
-    def compute_slug_for_retry
-      compute_slug
-    end
-
     private
 
     # S1: around_create retry for NOT NULL slug columns (pre-INSERT collision)
@@ -153,24 +145,29 @@ module Slugifiable
     def retry_create_on_slug_unique_violation
       return yield unless slug_persisted? && slug_column_not_null?
 
-      with_slug_retry { yield }
+      with_slug_retry(for_insert: true) do |attempts|
+        # `around_create` retries can re-enter create callbacks. Set a fresh slug
+        # before retrying so pre-insert slug strategies don't reuse a collided value.
+        self.slug = compute_slug if attempts.positive?
+        yield
+      end
     end
 
     # S3: Shared retry helper with savepoints for both paths
     # PostgreSQL requires savepoints: without them, retry fails with
     # "current transaction is aborted, commands ignored until end"
-    def with_slug_retry
+    def with_slug_retry(for_insert: false)
       attempts = 0
       begin
-        self.class.transaction(requires_new: true) { yield }
+        self.class.transaction(requires_new: true) { yield(attempts) }
       rescue ActiveRecord::RecordNotUnique => e
         raise unless slug_unique_violation?(e)
-        raise if persisted? # Already saved, different error
+        raise if for_insert && persisted? # Already inserted; don't retry whole create
 
         attempts += 1
         raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS # S6: Raise on exhaustion
 
-        self.slug = compute_slug_for_retry
+        self.slug = compute_slug if for_insert
         retry
       end
     end
@@ -222,7 +219,7 @@ module Slugifiable
 
       # If we couldn't find a unique slug after MAX_SLUG_GENERATION_ATTEMPTS,
       # append timestamp + random to ensure uniqueness
-      if attempts == MAX_SLUG_GENERATION_ATTEMPTS
+      if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
         slug_candidate = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
       end
 
@@ -276,18 +273,9 @@ module Slugifiable
       return unless slug_persisted?
       return unless slug.blank?
 
-      attempts = 0
-      begin
-        self.slug = compute_slug_for_retry
-        self.class.transaction(requires_new: true) { save! }
-      rescue ActiveRecord::RecordNotUnique => e
-        raise unless slug_unique_violation?(e)
-
-        attempts += 1
-        raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS # S6: Raise on exhaustion
-
-        self.slug = nil # Clear for regeneration
-        retry
+      with_slug_retry do |_attempts|
+        self.slug = compute_slug
+        save!
       end
     end
 
