@@ -80,9 +80,53 @@ Product.first.slug
 
 If your model has a `slug` attribute in the database, `slugifiable` will automatically generate a slug for that model upon instance creation, and save it to the DB.
 
-> [!IMPORTANT]
-> Your `slug` attribute **SHOULD NOT** have `null: false` in the migration / database. If it does, `slugifiable` will not be able to save the slug to the database, and will raise an error like `ERROR:  null value in column "slug" of relation "posts" violates not-null constraint (PG::NotNullViolation)`
-> This is because records are created without a slug, and the slug is generated later.
+### Nullable vs NOT NULL Slug Columns
+
+**Nullable columns (default, simpler):**
+```ruby
+# migration
+add_column :products, :slug, :string
+add_index :products, :slug, unique: true
+
+# model
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :name
+end
+```
+
+**NOT NULL columns (requires `before_validation` setup):**
+```ruby
+# migration
+add_column :products, :slug, :string, null: false
+add_index :products, :slug, unique: true
+
+# model
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :name
+
+  before_validation :ensure_slug_present, on: :create
+
+  private
+
+  def ensure_slug_present
+    self.slug = compute_slug if slug.blank?
+  end
+end
+```
+
+> [!NOTE]
+> When using NOT NULL slug columns, `slugifiable` handles race conditions automatically. If two processes try to create records with the same slug simultaneously, the second one will retry with a new random suffix.
+
+> [!CAUTION]
+> For NOT NULL slug columns, retries re-run the `around_create` callback chain. If a slug collision happens, your `before_create` callbacks will run again. Keep `before_create` callbacks idempotent (or move side effects to `after_create`/background jobs).
+
+> [!NOTE]
+> Retry handling is DB-constraint-driven (`RecordNotUnique`), not validation-driven. A validation-layer race that raises `RecordInvalid` will bubble up.
+
+> [!NOTE]
+> Slug collision detection matches errors containing `slug`/`_on_slug`. If your index uses a custom name that does not include those patterns, retries will not trigger and the exception will bubble up.
 
 If you're generating slugs based off the model `id`, you can also set a desired length:
 ```ruby

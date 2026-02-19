@@ -40,10 +40,21 @@ ActiveRecord::Schema.define do
     t.timestamps
   end
 
+  add_index :test_models, :slug, unique: true
+
   create_table :test_models_without_slug do |t|
     t.string :title
     t.timestamps
   end
+
+  # Model with NOT NULL slug for testing around_create retry path
+  create_table :strict_slug_models do |t|
+    t.string :name
+    t.string :slug, null: false
+    t.timestamps
+  end
+
+  add_index :strict_slug_models, :slug, unique: true
 end
 
 # Test model with slug column
@@ -65,6 +76,22 @@ class TestModelWithoutSlug < ActiveRecord::Base
   # (none in our test case)
 end
 
+# Test model with NOT NULL slug column (tests around_create retry path)
+# This simulates the organizations gem setup where slug is required at INSERT time
+class StrictSlugModel < ActiveRecord::Base
+  include Slugifiable::Model
+  generate_slug_based_on :name
+
+  # Must set slug before validation (like organizations gem does)
+  before_validation :ensure_slug_present, on: :create
+
+  private
+
+  def ensure_slug_present
+    self.slug = compute_slug if slug.blank?
+  end
+end
+
 # Helper module for resetting test model state
 module SlugifiableTestHelper
   # List of methods that tests might define on TestModel that need cleanup
@@ -79,6 +106,7 @@ module SlugifiableTestHelper
     slug_source
     virtual_attribute
     title_with_location
+    ensure_slug_present
   ].freeze
 
   def self.reset_test_model!
@@ -97,5 +125,9 @@ module SlugifiableTestHelper
         remove_method(method_name) if protected_method_defined?(method_name)
       end
     end
+  end
+
+  def self.reset_strict_slug_model!
+    StrictSlugModel.delete_all
   end
 end
