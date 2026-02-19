@@ -167,7 +167,6 @@ module Slugifiable
         attempts += 1
         raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS # S6: Raise on exhaustion
 
-        self.slug = compute_slug if for_insert
         retry
       end
     end
