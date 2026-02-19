@@ -1,3 +1,10 @@
+## [Unreleased]
+
+- Added retry handling for `ActiveRecord::RecordNotUnique` slug collisions during post-create slug persistence
+- Added `around_create` retry handling for insert-time slug collisions in pre-insert (`null: false`) slug strategies
+- Wrapped insert retries in savepoint transactions (`requires_new: true`) to keep PostgreSQL transactions retry-safe
+- Added regression coverage for insert-time and update-time slug race windows
+
 ## [0.2.0] - 2026-01-16
 
 - Added a full Minitest test suite

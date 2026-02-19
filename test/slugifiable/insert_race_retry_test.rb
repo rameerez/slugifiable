@@ -21,6 +21,12 @@ class Slugifiable::InsertRaceRetryTest < Minitest::Test
     race_model = build_race_model do
       class_attribute :insert_attempts, instance_accessor: false, default: 0
       class_attribute :injected_once, instance_accessor: false, default: false
+      class_attribute :compute_slug_calls, instance_accessor: false, default: 0
+
+      define_method(:compute_slug) do
+        self.class.compute_slug_calls += 1
+        super()
+      end
 
       before_create do
         self.class.insert_attempts += 1
@@ -48,8 +54,44 @@ class Slugifiable::InsertRaceRetryTest < Minitest::Test
 
     assert record.persisted?
     assert_equal 2, race_model.insert_attempts, "expected one failed INSERT then one successful retry"
-    refute_equal "acme", record.slug, "retry should recompute slug after collision"
-    assert record.slug.start_with?("acme-")
+    assert_equal 2, race_model.compute_slug_calls,
+      "expected compute_slug in before_validation and again before retry"
+    assert record.slug.start_with?("acme")
+  end
+
+  def test_insert_retry_wraps_each_attempt_in_requires_new_transaction
+    race_model = build_race_model do
+      class_attribute :transaction_options_seen, instance_accessor: false, default: []
+
+      singleton_class.class_eval do
+        define_method(:transaction) do |*args, **options, &block|
+          self.transaction_options_seen += [options]
+          super(*args, **options, &block)
+        end
+      end
+    end
+
+    race_model.create!(title: "Transaction Check")
+
+    assert race_model.transaction_options_seen.any? { |options| options[:requires_new] },
+      "insert retry should execute inside requires_new transaction savepoints"
+  end
+
+  def test_after_create_does_not_recompute_slug_when_insert_slug_is_present
+    race_model = build_race_model do
+      class_attribute :compute_slug_calls, instance_accessor: false, default: 0
+
+      define_method(:compute_slug) do
+        self.class.compute_slug_calls += 1
+        super()
+      end
+    end
+
+    record = race_model.create!(title: "Stable Slug")
+
+    assert_equal 1, race_model.compute_slug_calls,
+      "compute_slug should run once during before_validation, not again in after_create"
+    assert_equal record.slug, race_model.find(record.id).slug
   end
 
   def test_insert_time_non_slug_record_not_unique_bubbles

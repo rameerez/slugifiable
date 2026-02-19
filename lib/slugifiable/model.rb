@@ -226,8 +226,10 @@ module Slugifiable
     end
 
     def set_slug_with_retry
+      return unless slug.blank?
+
       with_slug_retry(-> { self.slug = nil }) do
-        self.slug = compute_slug if slug.blank? || id_changed?
+        self.slug = compute_slug
         self.save
       end
     end
@@ -249,23 +251,33 @@ module Slugifiable
     def retry_create_on_slug_unique_violation
       return yield unless slug_persisted?
 
-      # Recompute slug before retry because create-callback retries do not
-      # re-run validation callbacks.
-      with_slug_retry(-> { self.slug = compute_slug }) do
-        yield
+      # Each attempt runs in a savepoint so a unique-constraint violation does
+      # not abort the outer transaction in PostgreSQL.
+      with_slug_retry(
+        -> { self.slug = compute_slug },
+        retry_if: ->(_error) { !persisted? }
+      ) do
+        # Recompute slug before retry because create-callback retries do not
+        # re-run validation callbacks.
+        self.class.transaction(requires_new: true) { yield }
       end
     end
 
     # Shared retry logic for slug unique constraint violations.
     # Retries up to MAX_SLUG_GENERATION_ATTEMPTS times, calling pre_retry_action
     # before each retry to regenerate the slug.
-    def with_slug_retry(pre_retry_action)
+    #
+    # Unlike generate_unique_slug (which can fall back to a timestamp suffix),
+    # this helper raises once the limit is hit because the database has already
+    # rejected multiple concrete writes for uniqueness.
+    def with_slug_retry(pre_retry_action, retry_if: ->(_error) { true })
       attempts = 0
 
       begin
         yield
       rescue ActiveRecord::RecordNotUnique => e
         raise unless slug_unique_violation?(e)
+        raise unless retry_if.call(e)
 
         attempts += 1
         raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS

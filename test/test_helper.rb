@@ -39,6 +39,7 @@ ActiveRecord::Schema.define do
     t.string :slug
     t.timestamps
   end
+  add_index :test_models, :slug, unique: true
 
   create_table :test_models_without_slug do |t|
     t.string :title

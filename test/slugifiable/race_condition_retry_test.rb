@@ -65,76 +65,75 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
   # ==========================================================================
 
   def test_max_retries_exceeded_raises_error
-    # This test simulates a pathological case where every slug attempt collides.
-    # In practice this is nearly impossible due to random suffixes, but we test
-    # that the retry limit is respected.
+    race_model = build_update_race_model do
+      class_attribute :create_attempts, instance_accessor: false, default: 0
+      class_attribute :update_attempts, instance_accessor: false, default: 0
 
-    # Create an existing record with a specific slug
-    TestModel.create!(title: "Existing").tap { |m| m.update_column(:slug, "always-same-slug") }
+      before_create do
+        self.class.create_attempts += 1
+      end
 
-    model = TestModel.new(title: "Max Retry Test")
-    model.id = 999 # Assign an ID so it appears persisted
-
-    # Track retry attempts
-    call_count = 0
-
-    model.define_singleton_method(:compute_slug) do
-      call_count += 1
-      "always-same-slug" # Always collide
+      before_update do
+        self.class.update_attempts += 1
+        raise ActiveRecord::RecordNotUnique, "UNIQUE constraint failed: test_models.slug"
+      end
     end
 
-    # Skip validation to hit the database constraint directly
-    model.define_singleton_method(:save) do
-      # Bypass validation, go straight to DB
-      raise ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: test_models.slug")
-    end
-
-    # The retry should eventually give up
     assert_raises(ActiveRecord::RecordNotUnique) do
-      model.send(:set_slug_with_retry)
+      race_model.create!(title: "Always Collides")
     end
 
-    assert call_count > 1, "Should have attempted multiple retries (got #{call_count})"
-    assert call_count <= Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS + 1,
-      "Should not exceed MAX_SLUG_GENERATION_ATTEMPTS (got #{call_count})"
+    assert_equal 1, race_model.create_attempts,
+      "around_create should not retry INSERT when failure comes from after_create slug save"
+    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS, race_model.update_attempts
   end
 
   def test_non_slug_unique_violations_bubble_up
-    # Create a test model with a unique constraint on another column
-    # For this test, we'll simulate by catching and re-raising
-
-    model = TestModel.create!(title: "Bubble Up Test")
-
-    # Simulate a non-slug unique violation
-    model.define_singleton_method(:save) do
-      raise ActiveRecord::RecordNotUnique.new("UNIQUE constraint failed: test_models.email")
+    race_model = build_update_race_model do
+      before_update do
+        raise ActiveRecord::RecordNotUnique, "UNIQUE constraint failed: test_models.email"
+      end
     end
 
-    # Should raise without retry
     assert_raises(ActiveRecord::RecordNotUnique) do
-      model.send(:set_slug_with_retry)
+      race_model.create!(title: "Bubble Up Test")
     end
   end
 
   def test_retry_clears_slug_before_regeneration
-    model = TestModel.new(title: "Clear Slug Test")
+    race_model = build_update_race_model do
+      class_attribute :slug_values_before_compute, instance_accessor: false, default: []
+      class_attribute :injected_once, instance_accessor: false, default: false
 
-    slugs_seen = []
-    original_compute = model.method(:compute_slug)
+      define_method(:compute_slug) do
+        self.class.slug_values_before_compute += [slug]
+        super()
+      end
 
-    model.define_singleton_method(:compute_slug) do
-      slug = original_compute.call
-      slugs_seen << slug
-      slug
+      before_update do
+        next if self.class.injected_once || slug.blank?
+
+        self.class.injected_once = true
+        now = Time.current
+        conn = self.class.connection
+
+        conn.execute(
+          <<~SQL
+            INSERT INTO test_models (title, slug, created_at, updated_at)
+            VALUES (
+              #{conn.quote("Injected")},
+              #{conn.quote(slug)},
+              #{conn.quote(now)},
+              #{conn.quote(now)}
+            )
+          SQL
+        )
+      end
     end
 
-    # First call sets slug
-    model.send(:set_slug_with_retry)
+    race_model.create!(title: "Clear Slug Test")
 
-    # All computed slugs should potentially be different (random suffixes)
-    # The first one should be the base slug
-    assert slugs_seen.first == "clear-slug-test" || slugs_seen.first.start_with?("clear-slug-test"),
-      "First slug should be based on title"
+    assert_equal [nil, nil], race_model.slug_values_before_compute
   end
 
   # ==========================================================================
@@ -178,29 +177,49 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
     assert_equal "after-create-hook", model.slug
   end
 
-  # ==========================================================================
-  # Prove the fix was necessary (without it, these would fail)
-  # ==========================================================================
+  def test_after_create_slug_collision_retries_and_succeeds
+    race_model = build_update_race_model do
+      class_attribute :update_attempts, instance_accessor: false, default: 0
+      class_attribute :injected_once, instance_accessor: false, default: false
 
-  def test_without_retry_concurrent_creates_would_fail
-    # This test demonstrates why retry is needed:
-    # Without retry, concurrent creates with the same base slug could fail
-    # when both pass the EXISTS check but one INSERT wins.
+      before_update do
+        self.class.update_attempts += 1
+        next if self.class.injected_once || slug.blank?
 
-    # We can't easily test true concurrency in SQLite in-memory,
-    # but we can verify the retry mechanism by forcing a collision scenario.
+        self.class.injected_once = true
+        now = Time.current
+        conn = self.class.connection
 
-    # Create initial record
-    TestModel.create!(title: "Force Collision")
-
-    # Create many more with same title - without retry, some would fail
-    # With retry, all should succeed
-    50.times do
-      model = TestModel.create!(title: "Force Collision")
-      refute_nil model.slug
-      assert model.slug.start_with?("force-collision")
+        conn.execute(
+          <<~SQL
+            INSERT INTO test_models (title, slug, created_at, updated_at)
+            VALUES (
+              #{conn.quote("Injected")},
+              #{conn.quote(slug)},
+              #{conn.quote(now)},
+              #{conn.quote(now)}
+            )
+          SQL
+        )
+      end
     end
 
-    assert_equal 51, TestModel.where("slug LIKE 'force-collision%'").count
+    record = race_model.create!(title: "Force Collision")
+
+    assert record.persisted?
+    assert_equal 2, race_model.update_attempts, "expected one failed UPDATE then one successful retry"
+    refute_equal "force-collision", record.slug
+    assert record.slug.start_with?("force-collision-")
+  end
+
+  private
+
+  def build_update_race_model(&block)
+    klass = Class.new(TestModel) do
+      self.table_name = "test_models"
+    end
+
+    klass.class_eval(&block) if block
+    klass
   end
 end
