@@ -283,7 +283,9 @@ module Slugifiable
 
       with_slug_retry(-> { self.slug = nil }, on_exhaustion: on_exhaustion) do
         self.slug = compute_slug
-        self.class.transaction(requires_new: true) { self.save }
+        # Use save! for consistency with exhaustion fallback — both paths
+        # now raise on any failure, not just RecordNotUnique.
+        self.class.transaction(requires_new: true) { self.save! }
       end
     end
 
@@ -347,9 +349,12 @@ module Slugifiable
       end
     end
 
+    # Memoize at class level since columns_hash doesn't change at runtime.
+    # This avoids computing the same value for every instance.
     def slug_column_not_null?
-      return @slug_column_not_null if defined?(@slug_column_not_null)
-      @slug_column_not_null = self.class.columns_hash["slug"]&.null == false
+      klass = self.class
+      return klass.instance_variable_get(:@slug_column_not_null) if klass.instance_variable_defined?(:@slug_column_not_null)
+      klass.instance_variable_set(:@slug_column_not_null, klass.columns_hash["slug"]&.null == false)
     end
 
     # Generates a slug for retry attempts during INSERT-time race conditions.

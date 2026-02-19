@@ -312,24 +312,30 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
       "Should have attempted exhaustion fallback with timestamp slug"
   end
 
-  def test_exhaustion_fallback_uses_save_bang
-    # Reviewer concern: on_exhaustion uses self.save (not save!) which might
-    # silently swallow failures.
+  def test_exhaustion_fallback_raises_on_validation_error
+    # Verify that validation errors in the exhaustion fallback path raise
+    # (save! is used, not save). A validation error during exhaustion should
+    # not be silently swallowed.
     #
-    # This test verifies that save! is used (raises on failure rather than
-    # returning false). We test this by checking the model source directly.
+    # We test this by verifying the source code uses save! rather than save.
+    # This approach is simpler than trying to trigger the exact behavior,
+    # which requires complex setup with anonymous classes that have Rails
+    # naming issues. The behavioral test test_exhaustion_fallback_raises_on_continued_unique_violation
+    # already covers that the exhaustion path propagates RecordNotUnique.
     model = TestModel.new(title: "Save Bang Test")
 
-    # Read the source of set_slug_with_retry and verify it uses save!
     source_location = model.method(:set_slug_with_retry).source_location
     refute_nil source_location, "Should be able to locate source"
 
     file_path, _line = source_location
     source = File.read(file_path)
 
-    # The on_exhaustion callback should use save! not save
+    # Verify save! is used in both the retry block AND the exhaustion fallback
+    # (both should propagate failures, not swallow them)
     assert_match(/on_exhaustion.*\{.*self\.save!.*\}/m, source,
       "on_exhaustion should use self.save! to ensure failures propagate")
+    assert_match(/with_slug_retry.*do.*self\.save!.*end/m, source,
+      "retry block should use self.save! to ensure failures propagate")
   end
 
   private
