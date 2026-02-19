@@ -370,11 +370,13 @@ module Slugifiable
       self.class.columns_hash["slug"]&.null == false
     end
 
+    protected
+
     # Generates a slug for retry attempts during INSERT-time race conditions.
     #
-    # Override this method in subclasses to customize retry slug generation.
-    # For example, to use a different suffix strategy or incorporate additional
-    # uniqueness factors.
+    # SUBCLASS OVERRIDE POINT: Override this method in subclasses to customize
+    # retry slug generation. For example, to use a different suffix strategy or
+    # incorporate additional uniqueness factors.
     #
     # Default behavior: delegates to compute_slug, which for attribute-based
     # strategies calls generate_unique_slug (adds random suffixes on each call),
@@ -387,6 +389,8 @@ module Slugifiable
       compute_slug
     end
 
+    private
+
     # Shared retry logic for slug unique constraint violations.
     # Makes up to MAX_SLUG_GENERATION_ATTEMPTS total attempts (1 initial + N-1 retries),
     # calling pre_retry_action before each retry to regenerate the slug.
@@ -394,6 +398,12 @@ module Slugifiable
     # When retries are exhausted, calls the optional on_exhaustion proc if provided,
     # otherwise re-raises the exception. The on_exhaustion proc can apply a timestamp
     # fallback to maintain parity with generate_unique_slug's lenient behavior.
+    #
+    # KNOWN LIMITATION: This catches RecordNotUnique (DB constraint violation) but not
+    # RecordInvalid (AR validation failure). If another process steals the slug between
+    # the AR uniqueness validation SELECT and the actual UPDATE, save! raises RecordInvalid
+    # instead of RecordNotUnique. This is a narrow window and the DB constraint is the
+    # ultimate safeguard, but be aware that RecordInvalid from a race is not retried.
     def with_slug_retry(pre_retry_action, retry_if: ->(_error) { true }, on_exhaustion: nil)
       attempts = 0
 
