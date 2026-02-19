@@ -137,6 +137,34 @@ module Slugifiable
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
 
+    # Returns the raw parameterized slug without uniqueness handling.
+    # Used by the exhaustion fallback to avoid double-suffixing.
+    def compute_base_slug
+      strategy, options = determine_slug_generation_method
+
+      case strategy
+      when :compute_slug_based_on_attribute
+        attribute_name = options
+        has_attribute = self.attributes.include?(attribute_name.to_s)
+        responds_to_method = !has_attribute && (
+          self.class.method_defined?(attribute_name) ||
+          self.class.private_method_defined?(attribute_name) ||
+          self.class.protected_method_defined?(attribute_name)
+        )
+
+        return compute_slug_as_string unless has_attribute || responds_to_method
+
+        raw_value = self.send(attribute_name)
+        return compute_slug_as_string if raw_value.nil?
+
+        base_slug = raw_value.to_s.strip.parameterize
+        base_slug.presence || compute_slug_as_string
+      else
+        # For ID-based strategies, return the deterministic hash
+        compute_slug
+      end
+    end
+
     private
 
     def normalize_length(length, default, max)
@@ -237,9 +265,9 @@ module Slugifiable
       # not abort the outer transaction in PostgreSQL.
       #
       # Fallback when all retries exhausted: use timestamp suffix for guaranteed uniqueness.
-      # This maintains parity with generate_unique_slug's lenient behavior.
+      # Uses compute_base_slug to avoid double-suffixing (compute_slug includes random suffixes).
       on_exhaustion = -> {
-        base_slug = compute_slug
+        base_slug = compute_base_slug
         self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
         self.class.transaction(requires_new: true) { self.save }
       }

@@ -183,6 +183,69 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
   # with savepoints, see test/slugifiable/insert_race_retry_test.rb which tests
   # the INSERT-time retry path for NOT NULL slug columns.
 
+  def test_compute_base_slug_returns_raw_parameterized_value
+    model = TestModel.new(title: "Base Slug Test")
+
+    # compute_base_slug should return the raw parameterized value without uniqueness suffixes
+    base_slug = model.send(:compute_base_slug)
+
+    assert_equal "base-slug-test", base_slug, "Should return raw parameterized title"
+  end
+
+  def test_compute_base_slug_handles_nil_attribute
+    model = TestModel.new(title: nil)
+
+    # Should fallback to ID-based slug when attribute is nil
+    base_slug = model.send(:compute_base_slug)
+
+    # For a new record without ID, this falls back to compute_slug_as_string
+    assert_kind_of String, base_slug
+  end
+
+  def test_compute_base_slug_handles_blank_attribute
+    model = TestModel.new(title: "   ")
+
+    # Should fallback to ID-based slug when parameterized value is blank
+    base_slug = model.send(:compute_base_slug)
+
+    assert_kind_of String, base_slug
+  end
+
+  def test_compute_base_slug_with_id_based_strategy
+    # Create a model that uses default ID-based strategy
+    id_based_model = Class.new(TestModel) do
+      self.table_name = "test_models"
+
+      # Override to use default ID-based strategy
+      def determine_slug_generation_method
+        [:compute_slug_as_string, {}]
+      end
+    end
+
+    model = id_based_model.new(title: "Ignored Title")
+    model.id = 123
+
+    # For ID-based strategy, compute_base_slug delegates to compute_slug
+    base_slug = model.send(:compute_base_slug)
+
+    assert_kind_of String, base_slug
+  end
+
+  def test_compute_base_slug_when_attribute_missing
+    # Create a model configured to use a non-existent attribute
+    model = TestModel.new(title: "Has Title")
+
+    # Temporarily modify the model to reference a non-existent attribute
+    def model.determine_slug_generation_method
+      [:compute_slug_based_on_attribute, :nonexistent_attribute]
+    end
+
+    # Should fallback to ID-based slug
+    base_slug = model.send(:compute_base_slug)
+
+    assert_kind_of String, base_slug
+  end
+
   private
 
   def build_update_race_model(&block)
