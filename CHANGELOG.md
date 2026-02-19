@@ -1,24 +1,10 @@
-## [0.2.1] - 2026-02-19
+## [0.3.0] - 2026-02-19
 
-### Fixed
-- **Race condition in slug generation**: When two processes create records with the same base slug simultaneously, the second process now retries with a new random suffix instead of crashing with `RecordNotUnique`
-
-### Added
-- `around_create :retry_create_on_slug_unique_violation` for NOT NULL slug columns (pre-INSERT collision handling)
-- `with_slug_retry` helper with PostgreSQL-safe savepoints (`requires_new: true`)
-- `slug_column_not_null?` optimization to skip savepoint overhead for nullable slug columns
-- `slug_unique_violation?` detection supporting SQLite, PostgreSQL, and MySQL error formats
-
-### Changed
-- `set_slug` now uses shared retry handling with savepoints on `RecordNotUnique` for slug collisions (after_create path)
-- Retry exhaustion raises `RecordNotUnique` instead of falling back to timestamp suffix (fail-fast behavior)
-- `update_slug_if_nil` explicitly uses non-bang `save` to avoid exceptions on read operations
-
-### Known Limitations
-- **`around_create` retries rely on Rails internals**: The NOT NULL create retry path re-invokes the `around_create` callback chain. This behavior is covered by tests, but it is not explicitly documented as a public Rails callback contract.
-- **`before_create` callbacks will re-execute on retry**: If a retry is needed, `before_create` callbacks run again. Design callbacks to be idempotent or use guards.
-- **`RecordInvalid` is not retried**: Only DB-level `RecordNotUnique` triggers retry. A validation-layer uniqueness race that raises `RecordInvalid` will bubble up.
-- **Custom index names**: If your slug unique index has a non-standard name that doesn't contain `slug` or `_on_slug`, violations will bubble up instead of retrying.
+- Fixed race condition: retry with new random suffix on `RecordNotUnique` instead of crashing
+- Added PostgreSQL-safe savepoints for retry logic
+- Added support for NOT NULL slug columns (see README for setup)
+- Changed `set_slug` to use `save!` instead of `save` (raises on validation errors)
+- `before_create` and `after_create` callbacks re-run on retry — keep them idempotent
 
 ## [0.2.0] - 2026-01-16
 
