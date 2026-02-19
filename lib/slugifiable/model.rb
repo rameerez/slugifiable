@@ -221,8 +221,30 @@ module Slugifiable
     def set_slug
       return unless slug_persisted?
 
-      self.slug = compute_slug if id_changed? || slug.blank?
-      self.save
+      set_slug_with_retry
+    end
+
+    def set_slug_with_retry
+      attempts = 0
+
+      begin
+        self.slug = compute_slug if slug.blank? || (respond_to?(:id_changed?) && id_changed?)
+        self.save
+      rescue ActiveRecord::RecordNotUnique => e
+        # Only retry on slug-related unique violations
+        raise unless slug_unique_violation?(e)
+
+        attempts += 1
+        raise if attempts > MAX_SLUG_GENERATION_ATTEMPTS
+
+        # Clear slug to force regeneration with new random suffix
+        self.slug = nil
+        retry
+      end
+    end
+
+    def slug_unique_violation?(error)
+      error.message.to_s.downcase.include?("slug")
     end
 
     def update_slug_if_nil
