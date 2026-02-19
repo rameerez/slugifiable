@@ -228,6 +228,10 @@ module Slugifiable
     def set_slug_with_retry
       return unless slug.blank?
 
+      # For attribute-based slugs, compute_slug -> generate_unique_slug already
+      # handles uniqueness with random suffixes on each call.
+      # For ID-based slugs, collisions are impossible since two records can't
+      # have the same ID, so retries would never be triggered in practice.
       with_slug_retry(-> { self.slug = nil }) do
         self.slug = compute_slug
         self.save
@@ -236,14 +240,17 @@ module Slugifiable
 
     # Detects if a RecordNotUnique error is related to the slug column.
     #
-    # NOTE: This uses a simple substring match on the error message, which may
-    # produce false positives for columns/tables containing "slug" in their name
-    # (e.g., "slug_version", "reslugged_items"). This trade-off is intentional:
+    # NOTE: This uses word-boundary matching on the error message to reduce
+    # false positives from columns/tables containing "slug" as a substring
+    # (e.g., "reslugged_items" won't match, but "slug" and "index_on_slug" will).
+    # Trade-offs:
     # - PostgreSQL includes constraint names like "index_users_on_slug"
     # - MySQL/SQLite include column names in violation messages
     # - A more precise check would require adapter-specific parsing
     def slug_unique_violation?(error)
-      error.message.to_s.downcase.include?("slug")
+      message = error.message.to_s.downcase
+      cause_message = error.cause&.message.to_s.downcase
+      [message, cause_message].any? { |m| m.match?(/\bslug\b/) }
     end
 
     # Handle INSERT-time slug races for models that persist slugs at create-time
@@ -254,7 +261,7 @@ module Slugifiable
       # Each attempt runs in a savepoint so a unique-constraint violation does
       # not abort the outer transaction in PostgreSQL.
       with_slug_retry(
-        -> { self.slug = compute_slug },
+        -> { self.slug = compute_slug_for_retry },
         retry_if: ->(_error) { !persisted? }
       ) do
         # Recompute slug before retry because create-callback retries do not
@@ -263,9 +270,29 @@ module Slugifiable
       end
     end
 
+    # Generates a slug for retry attempts with guaranteed randomness.
+    # For attribute-based strategies, compute_slug already uses generate_unique_slug
+    # which adds random suffixes. For ID-based strategies (where compute_slug returns
+    # a deterministic hash of the ID), we append randomness to ensure retry attempts
+    # try different slug values. In practice, ID-based collisions are impossible
+    # since two records can't have the same ID.
+    def compute_slug_for_retry
+      base_slug = compute_slug
+      if id_based_slug_strategy?
+        "#{base_slug}-#{SecureRandom.random_number(10 ** DEFAULT_SLUG_NUMBER_LENGTH)}"
+      else
+        base_slug
+      end
+    end
+
+    def id_based_slug_strategy?
+      strategy, _options = determine_slug_generation_method
+      [:compute_slug_as_string, :compute_slug_as_number].include?(strategy)
+    end
+
     # Shared retry logic for slug unique constraint violations.
-    # Retries up to MAX_SLUG_GENERATION_ATTEMPTS times, calling pre_retry_action
-    # before each retry to regenerate the slug.
+    # Makes up to MAX_SLUG_GENERATION_ATTEMPTS total attempts (1 initial + N-1 retries),
+    # calling pre_retry_action before each retry to regenerate the slug.
     #
     # Unlike generate_unique_slug (which can fall back to a timestamp suffix),
     # this helper raises once the limit is hit because the database has already
