@@ -33,8 +33,9 @@ module Slugifiable
     # 10^18 fits safely in a 64-bit integer
     MAX_NUMBER_LENGTH = 18
 
-    # Maximum number of attempts to generate a unique slug
-    # before falling back to timestamp-based suffix
+    # Maximum number of attempts to generate a unique slug before exhaustion.
+    # Total saves in worst case for nullable-slug path: 10 attempts + 1 exhaustion fallback = 11.
+    # For NOT NULL path: 10 attempts then raises (no fallback).
     MAX_SLUG_GENERATION_ATTEMPTS = 10
 
     included do
