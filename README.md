@@ -215,6 +215,15 @@ bundle exec rake test
 
 The test suite uses SQLite3 in-memory database and requires no additional setup.
 
+Optional PostgreSQL integration check:
+
+```bash
+SLUGIFIABLE_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/slugifiable_test \
+bundle exec ruby -Itest test/slugifiable/postgresql_insert_race_retry_test.rb
+```
+
+This test validates PostgreSQL transaction behavior for retrying INSERT-time slug collisions.
+
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.

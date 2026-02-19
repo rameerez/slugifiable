@@ -11,6 +11,7 @@ group :development, :test do
   gem "appraisal"
   gem "minitest", "~> 6.0"
   gem "minitest-mock"
+  gem "pg"
   gem "rack-test"
   gem "simplecov", require: false
   gem "sqlite3", ">= 2.1"
