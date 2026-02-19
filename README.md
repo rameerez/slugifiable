@@ -85,6 +85,9 @@ If your model has a `slug` attribute in the database, `slugifiable` will automat
 > If you need `null: false`, generate the slug before `INSERT` (for example with a `before_validation` callback that sets `self.slug = compute_slug` when blank).
 > `slugifiable` handles slug unique-collision retries for both post-create and pre-insert slug strategies.
 
+> [!CAUTION]
+> **For NOT NULL slug columns with INSERT-time collision retry:** When a slug collision occurs and retry is needed, the entire `around_create` callback chain (including your `before_create` callbacks) re-executes. If you have non-idempotent callbacks like sending emails or enqueuing jobs, they may fire multiple times. Either make such callbacks idempotent, or move side-effects to `after_create` (which only fires once, after the record is persisted).
+
 If you're generating slugs based off the model `id`, you can also set a desired length:
 ```ruby
 class Product < ApplicationRecord
