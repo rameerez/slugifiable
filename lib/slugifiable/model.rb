@@ -107,29 +107,11 @@ module Slugifiable
       # 4. Ensure uniqueness
       # 5. Fallback to random number if anything fails
 
-      # First check if we can get a value from the database
-      has_attribute = self.attributes.include?(attribute_name.to_s)
+      base_slug = parameterize_attribute_value(attribute_name)
 
-      # Only check for methods if no DB attribute exists
-      # We check all method types to be thorough
-      responds_to_method = !has_attribute && (
-        self.class.method_defined?(attribute_name) ||
-        self.class.private_method_defined?(attribute_name) ||
-        self.class.protected_method_defined?(attribute_name)
-      )
-
-      # If we can't get a value from either source, fallback to using the record's ID
-      return compute_slug_as_string unless has_attribute || responds_to_method
-
-      # Get and clean the raw value (e.g. "  My Title  " -> "My Title")
-      # Works for both DB attributes and methods thanks to Ruby's send
-      raw_value = self.send(attribute_name)
-      return generate_random_number_based_on_id_hex if raw_value.nil?
-
-      # Convert to URL-friendly format
-      # e.g. "My Title" -> "my-title"
-      base_slug = raw_value.to_s.strip.parameterize
-      return generate_random_number_based_on_id_hex if base_slug.blank?
+      # Different fallback paths based on why parameterization failed
+      return compute_slug_as_string if base_slug == :attribute_missing
+      return generate_random_number_based_on_id_hex if base_slug == :value_nil_or_blank
 
       # Handle duplicate slugs by adding a random suffix if needed
       # e.g. "my-title" -> "my-title-123456"
@@ -142,32 +124,56 @@ module Slugifiable
     # Returns the raw parameterized slug without uniqueness handling.
     # Used by the exhaustion fallback to avoid double-suffixing.
     #
-    # Fallback behavior matches compute_slug_based_on_attribute: uses
-    # generate_random_number_based_on_id_hex for nil/blank/missing attributes.
+    # Always uses generate_random_number_based_on_id_hex for ALL fallback cases
+    # (missing attribute, nil value, blank value). This ensures the exhaustion
+    # fallback produces a simple numeric suffix regardless of failure reason.
     def compute_base_slug
       strategy, options = determine_slug_generation_method
 
       case strategy
       when :compute_slug_based_on_attribute
-        attribute_name = options
-        has_attribute = self.attributes.include?(attribute_name.to_s)
-        responds_to_method = !has_attribute && (
-          self.class.method_defined?(attribute_name) ||
-          self.class.private_method_defined?(attribute_name) ||
-          self.class.protected_method_defined?(attribute_name)
-        )
+        base_slug = parameterize_attribute_value(options)
 
-        return generate_random_number_based_on_id_hex unless has_attribute || responds_to_method
+        # All fallback cases use numeric ID-based slug for exhaustion path
+        return generate_random_number_based_on_id_hex if base_slug.is_a?(Symbol)
 
-        raw_value = self.send(attribute_name)
-        return generate_random_number_based_on_id_hex if raw_value.nil?
-
-        base_slug = raw_value.to_s.strip.parameterize
-        base_slug.presence || generate_random_number_based_on_id_hex
+        base_slug
       else
         # For ID-based strategies, return the deterministic hash
         compute_slug
       end
+    end
+
+    # Shared helper: extracts and parameterizes an attribute value.
+    # Returns one of:
+    # - String: the parameterized value (e.g. "my-title")
+    # - :attribute_missing: attribute/method doesn't exist
+    # - :value_nil_or_blank: attribute exists but value is nil or parameterizes to blank
+    #
+    # Used by both compute_slug_based_on_attribute and compute_base_slug
+    # to ensure consistent behavior. Callers handle fallback logic.
+    def parameterize_attribute_value(attribute_name)
+      # Check if we can get a value from the database
+      has_attribute = self.attributes.include?(attribute_name.to_s)
+
+      # Only check for methods if no DB attribute exists
+      # We check all method types to be thorough
+      responds_to_method = !has_attribute && (
+        self.class.method_defined?(attribute_name) ||
+        self.class.private_method_defined?(attribute_name) ||
+        self.class.protected_method_defined?(attribute_name)
+      )
+
+      # If we can't get a value from either source, signal missing attribute
+      return :attribute_missing unless has_attribute || responds_to_method
+
+      # Get and clean the raw value (e.g. "  My Title  " -> "My Title")
+      raw_value = self.send(attribute_name)
+      return :value_nil_or_blank if raw_value.nil?
+
+      # Convert to URL-friendly format (e.g. "My Title" -> "my-title")
+      base_slug = raw_value.to_s.strip.parameterize
+      base_slug.presence || :value_nil_or_blank
     end
 
     def normalize_length(length, default, max)
@@ -327,6 +333,10 @@ module Slugifiable
 
       # Each attempt runs in a savepoint so a unique-constraint violation does
       # not abort the outer transaction in PostgreSQL.
+      # retry_if guard: Only retry if the record wasn't actually persisted.
+      # This handles the edge case where an after_create callback raises a
+      # slug-named RecordNotUnique on an already-persisted record — we don't
+      # want to retry the INSERT in that case.
       with_slug_retry(
         -> { self.slug = compute_slug_for_retry },
         retry_if: ->(_error) { !persisted? }
