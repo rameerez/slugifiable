@@ -243,18 +243,18 @@ module Slugifiable
 
     # Detects if a RecordNotUnique error is related to the slug column.
     #
-    # NOTE: This uses word-boundary matching on the error message. Since Ruby
-    # regex treats underscore as a word character, constraint names like
-    # "index_users_on_slug" won't match via word boundary. However, detection
-    # still works because:
+    # Uses a pattern that handles common error message formats:
     # - SQLite: "UNIQUE constraint failed: table.slug" (period before slug)
     # - PostgreSQL: "DETAIL: Key (slug)=(value)" (parens around slug)
-    # - MySQL: includes column name directly
-    # A more precise check would require adapter-specific parsing.
+    # - MySQL: "Duplicate entry 'x' for key 'index_posts_on_slug'" (underscore before slug)
+    #
+    # Since Ruby regex treats underscore as a word character, we also match
+    # underscore-prefixed slug (e.g., "_slug" in "on_slug").
     def slug_unique_violation?(error)
       message = error.message.to_s.downcase
       cause_message = error.cause&.message.to_s.downcase
-      [message, cause_message].any? { |m| m.match?(/\bslug\b/) }
+      pattern = /\bslug\b|_slug\b/
+      [message, cause_message].any? { |m| m.match?(pattern) }
     end
 
     # Handle INSERT-time slug races for models that persist slugs at create-time
