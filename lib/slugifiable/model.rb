@@ -232,9 +232,12 @@ module Slugifiable
       # handles uniqueness with random suffixes on each call.
       # For ID-based slugs, collisions are impossible since two records can't
       # have the same ID, so retries would never be triggered in practice.
+      #
+      # Each attempt runs in a savepoint so a unique-constraint violation does
+      # not abort the outer transaction in PostgreSQL.
       with_slug_retry(-> { self.slug = nil }) do
         self.slug = compute_slug
-        self.save
+        self.class.transaction(requires_new: true) { self.save }
       end
     end
 
@@ -257,6 +260,9 @@ module Slugifiable
     # (e.g., NOT NULL slug columns with before_validation slug generation).
     def retry_create_on_slug_unique_violation
       return yield unless slug_persisted?
+      # Skip savepoint overhead for nullable slug columns — INSERT-time slug
+      # collisions are impossible when slug is NULL at INSERT time.
+      return yield unless slug_column_not_null?
 
       # Each attempt runs in a savepoint so a unique-constraint violation does
       # not abort the outer transaction in PostgreSQL.
@@ -270,12 +276,19 @@ module Slugifiable
       end
     end
 
+    def slug_column_not_null?
+      self.class.columns_hash["slug"]&.null == false
+    end
+
     # Generates a slug for retry attempts with guaranteed randomness.
     # For attribute-based strategies, compute_slug already uses generate_unique_slug
     # which adds random suffixes. For ID-based strategies (where compute_slug returns
     # a deterministic hash of the ID), we append randomness to ensure retry attempts
-    # try different slug values. In practice, ID-based collisions are impossible
-    # since two records can't have the same ID.
+    # try different slug values.
+    #
+    # NOTE: The ID-based path is defensive dead code — ID-based collisions are
+    # impossible since two records can't share the same ID. If this path were
+    # ever triggered, the slug format would change (e.g., "abc123" -> "abc123-481923").
     def compute_slug_for_retry
       base_slug = compute_slug
       if id_based_slug_strategy?
