@@ -235,7 +235,16 @@ module Slugifiable
       #
       # Each attempt runs in a savepoint so a unique-constraint violation does
       # not abort the outer transaction in PostgreSQL.
-      with_slug_retry(-> { self.slug = nil }) do
+      #
+      # Fallback when all retries exhausted: use timestamp suffix for guaranteed uniqueness.
+      # This maintains parity with generate_unique_slug's lenient behavior.
+      on_exhaustion = -> {
+        base_slug = compute_slug
+        self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
+        self.class.transaction(requires_new: true) { self.save }
+      }
+
+      with_slug_retry(-> { self.slug = nil }, on_exhaustion: on_exhaustion) do
         self.slug = compute_slug
         self.class.transaction(requires_new: true) { self.save }
       end
@@ -251,6 +260,10 @@ module Slugifiable
     # IMPORTANT: We use _on_slug\b specifically to avoid false positives on columns
     # like canonical_slug, parent_slug, original_slug, etc. The pattern _slug alone
     # would incorrectly match those.
+    #
+    # LIMITATION: Custom index names like `uq_slug_col`, `slug_idx`, or `posts_slug_unique`
+    # won't match. This results in a false negative (exception bubbles up), which is the
+    # safe outcome — no data corruption, just no automatic retry for that schema.
     def slug_unique_violation?(error)
       message = error.message.to_s.downcase
       cause_message = error.cause&.message.to_s.downcase
@@ -265,7 +278,16 @@ module Slugifiable
     #
     # NOTE: This calls `yield` multiple times (once per attempt) via `retry`.
     # This relies on Rails `around_create` yielding a re-invocable Proc, which
-    # is undocumented but has worked consistently in Rails 6-8.
+    # is undocumented but has worked consistently in Rails 6-8. The behavior
+    # stems from Rails building callback chains as re-callable Procs/lambdas.
+    # See: activerecord/lib/active_record/callbacks.rb and
+    # activesupport/lib/active_support/callbacks.rb in Rails source.
+    # The test suite includes `around_create_state_machine_test.rb` which
+    # validates this behavior continues to work on Rails upgrades.
+    #
+    # Unlike set_slug_with_retry (which falls back to timestamp suffix on exhaustion),
+    # this method raises after MAX_SLUG_GENERATION_ATTEMPTS because INSERT-time
+    # collisions requiring 10+ retries indicate a systemic issue that warrants attention.
     def retry_create_on_slug_unique_violation
       return yield unless slug_persisted?
       # Skip savepoint overhead for nullable slug columns — INSERT-time slug
@@ -285,40 +307,29 @@ module Slugifiable
     end
 
     def slug_column_not_null?
-      self.class.columns_hash["slug"]&.null == false
+      return @slug_column_not_null if defined?(@slug_column_not_null)
+      @slug_column_not_null = self.class.columns_hash["slug"]&.null == false
     end
 
-    # Generates a slug for retry attempts with guaranteed randomness.
-    # For attribute-based strategies, compute_slug already uses generate_unique_slug
-    # which adds random suffixes. For ID-based strategies (where compute_slug returns
-    # a deterministic hash of the ID), we append randomness to ensure retry attempts
-    # try different slug values.
+    # Generates a slug for retry attempts.
+    # For attribute-based strategies, compute_slug calls generate_unique_slug which
+    # adds random suffixes on each call, ensuring retry attempts try different values.
     #
-    # NOTE: The ID-based path is defensive dead code — ID-based collisions are
-    # impossible since two records can't share the same ID. If this path were
-    # ever triggered, the slug format would change (e.g., "abc123" -> "abc123-481923").
+    # NOTE: ID-based slug collisions are impossible (two records can't share the same ID),
+    # so this method is only meaningful for attribute-based strategies where concurrent
+    # inserts can race to claim the same slug.
     def compute_slug_for_retry
-      base_slug = compute_slug
-      if id_based_slug_strategy?
-        "#{base_slug}-#{SecureRandom.random_number(10 ** DEFAULT_SLUG_NUMBER_LENGTH)}"
-      else
-        base_slug
-      end
-    end
-
-    def id_based_slug_strategy?
-      strategy, _options = determine_slug_generation_method
-      [:compute_slug_as_string, :compute_slug_as_number].include?(strategy)
+      compute_slug
     end
 
     # Shared retry logic for slug unique constraint violations.
     # Makes up to MAX_SLUG_GENERATION_ATTEMPTS total attempts (1 initial + N-1 retries),
     # calling pre_retry_action before each retry to regenerate the slug.
     #
-    # Unlike generate_unique_slug (which can fall back to a timestamp suffix),
-    # this helper raises once the limit is hit because the database has already
-    # rejected multiple concrete writes for uniqueness.
-    def with_slug_retry(pre_retry_action, retry_if: ->(_error) { true })
+    # When retries are exhausted, calls the optional on_exhaustion proc if provided,
+    # otherwise re-raises the exception. The on_exhaustion proc can apply a timestamp
+    # fallback to maintain parity with generate_unique_slug's lenient behavior.
+    def with_slug_retry(pre_retry_action, retry_if: ->(_error) { true }, on_exhaustion: nil)
       attempts = 0
 
       begin
@@ -328,10 +339,16 @@ module Slugifiable
         raise unless retry_if.call(e)
 
         attempts += 1
-        raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
-
-        pre_retry_action.call
-        retry
+        if attempts >= MAX_SLUG_GENERATION_ATTEMPTS
+          if on_exhaustion
+            on_exhaustion.call
+          else
+            raise
+          end
+        else
+          pre_retry_action.call
+          retry
+        end
       end
     end
 

@@ -85,7 +85,8 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
 
     assert_equal 1, race_model.create_attempts,
       "around_create should not retry INSERT when failure comes from after_create slug save"
-    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS, race_model.update_attempts
+    # MAX retries + 1 fallback attempt with timestamp suffix
+    assert_equal Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS + 1, race_model.update_attempts
   end
 
   def test_non_slug_unique_violations_bubble_up
