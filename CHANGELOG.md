@@ -9,6 +9,8 @@
 ### Breaking Changes (Behavioral)
 
 - **For NOT NULL slug columns:** On insert-time slug collision, the entire `around_create` chain re-executes, which means `before_create` callbacks may fire multiple times. Move non-idempotent side effects (emails, jobs) to `after_create` to avoid duplication.
+- **Slug save now uses `save!` instead of `save`:** If a validation fails during the after-create slug-save phase, the new code raises `ActiveRecord::RecordInvalid` instead of silently skipping the slug save. This ensures failures are visible rather than silently ignored.
+- **Removed `id_changed?` check from `set_slug`:** The check was redundant for the `after_create` path (where ID always just changed from nil). This should not affect normal usage.
 
 ## [0.2.0] - 2026-01-16
 

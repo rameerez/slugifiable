@@ -339,12 +339,16 @@ module Slugifiable
       # This handles the edge case where an after_create callback raises a
       # slug-named RecordNotUnique on an already-persisted record — we don't
       # want to retry the INSERT in that case.
+      #
+      # pre_retry_action: Recompute slug via compute_slug_for_retry before each
+      # retry. Although validation callbacks DO re-run on retry (before_validation
+      # fires again when yield is called), models using ensure_slug_for_insert
+      # typically guard with `slug.blank?`, so the slug isn't recomputed there.
+      # The pre_retry_action ensures a fresh slug is generated for each attempt.
       with_slug_retry(
         -> { self.slug = compute_slug_for_retry },
         retry_if: ->(_error) { !persisted? }
       ) do
-        # Recompute slug before retry because create-callback retries do not
-        # re-run validation callbacks.
         self.class.transaction(requires_new: true) { yield }
       end
     end
