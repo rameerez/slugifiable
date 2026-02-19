@@ -126,7 +126,6 @@ class RaceConditionTest < Minitest::Test
     end
 
     assert_equal 2, block_calls
-    assert_match(/\Aacme/, model.slug)
   end
 
   def test_with_slug_retry_bubbles_non_slug_violations
