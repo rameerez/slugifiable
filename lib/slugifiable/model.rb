@@ -243,17 +243,20 @@ module Slugifiable
 
     # Detects if a RecordNotUnique error is related to the slug column.
     #
-    # Uses a pattern that handles common error message formats:
-    # - SQLite: "UNIQUE constraint failed: table.slug" (period before slug)
-    # - PostgreSQL: "DETAIL: Key (slug)=(value)" (parens around slug)
-    # - MySQL: "Duplicate entry 'x' for key 'index_posts_on_slug'" (underscore before slug)
+    # Uses patterns that handle common error message formats without false positives:
+    # - SQLite: "UNIQUE constraint failed: table.slug" -> matches \bslug\b (period is word boundary)
+    # - PostgreSQL: "Key (slug)=(value)" -> matches \bslug\b (parens are word boundaries)
+    # - MySQL/PG index: "index_posts_on_slug" -> matches _on_slug\b
     #
-    # Since Ruby regex treats underscore as a word character, we also match
-    # underscore-prefixed slug (e.g., "_slug" in "on_slug").
+    # IMPORTANT: We use _on_slug\b specifically to avoid false positives on columns
+    # like canonical_slug, parent_slug, original_slug, etc. The pattern _slug alone
+    # would incorrectly match those.
     def slug_unique_violation?(error)
       message = error.message.to_s.downcase
       cause_message = error.cause&.message.to_s.downcase
-      pattern = /\bslug\b|_slug\b/
+      # \bslug\b matches "slug" as standalone word (SQLite ".slug", PostgreSQL "(slug)")
+      # _on_slug\b matches Rails index naming convention "index_*_on_slug"
+      pattern = /\bslug\b|_on_slug\b/
       [message, cause_message].any? { |m| m.match?(pattern) }
     end
 
