@@ -137,7 +137,7 @@ class Slugifiable::BugVerificationTest < Minitest::Test
       model = TestModel.create!(title: "Timestamp Test")
 
       # Should fall back to timestamp + random suffix after MAX_SLUG_GENERATION_ATTEMPTS
-      assert_match(/\Atimestamp-test-\d+-\d+\z/, model.slug, "Should include timestamp and random suffix")
+      assert_match(/\Atimestamp-test-\d+-[a-f0-9]+\z/, model.slug, "Should include timestamp and random hex suffix")
       assert attempt_count >= Slugifiable::Model::MAX_SLUG_GENERATION_ATTEMPTS
     ensure
       TestModel.singleton_class.send(:remove_method, :exists?)

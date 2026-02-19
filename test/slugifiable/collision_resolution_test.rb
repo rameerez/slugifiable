@@ -128,7 +128,7 @@ class Slugifiable::CollisionResolutionTest < Minitest::Test
       Time.stub(:current, Time.at(frozen_time)) do
         model = TestModel.create!(title: "Timestamp Test")
         # Timestamp fallback now includes random suffix for extra uniqueness
-        assert_match(/\Atimestamp-test-#{frozen_time}-\d+\z/, model.slug)
+        assert_match(/\Atimestamp-test-#{frozen_time}-[a-f0-9]+\z/, model.slug)
       end
     ensure
       TestModel.singleton_class.send(:remove_method, :exists?)

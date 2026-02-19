@@ -137,6 +137,8 @@ module Slugifiable
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
 
+    private
+
     # Returns the raw parameterized slug without uniqueness handling.
     # Used by the exhaustion fallback to avoid double-suffixing.
     def compute_base_slug
@@ -164,8 +166,6 @@ module Slugifiable
         compute_slug
       end
     end
-
-    private
 
     def normalize_length(length, default, max)
       length = length.to_i
@@ -200,7 +200,7 @@ module Slugifiable
       # If we couldn't find a unique slug after MAX_SLUG_GENERATION_ATTEMPTS,
       # append timestamp + random to ensure uniqueness
       if attempts == MAX_SLUG_GENERATION_ATTEMPTS
-        slug_candidate = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
+        slug_candidate = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.hex(4)}"
       end
 
       slug_candidate
@@ -268,7 +268,7 @@ module Slugifiable
       # Uses compute_base_slug to avoid double-suffixing (compute_slug includes random suffixes).
       on_exhaustion = -> {
         base_slug = compute_base_slug
-        self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.random_number(1000)}"
+        self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.hex(4)}"
         self.class.transaction(requires_new: true) { self.save }
       }
 

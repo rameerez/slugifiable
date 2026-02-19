@@ -216,7 +216,7 @@ class Slugifiable::ExtensiveModelTest < Minitest::Test
       TestModel.define_singleton_method(:exists?) { |_conditions| true }
       model = TestModel.create!(title: "Test")
       # Expect a slug in the format "test-<timestamp>" (timestamp is 10+ digits)
-      assert_match(/\Atest-\d{10,}-\d+\z/, model.slug, "Should fall back to timestamp with random suffix after max attempts")
+      assert_match(/\Atest-\d{10,}-[a-f0-9]+\z/, model.slug, "Should fall back to timestamp with random hex suffix after max attempts")
     ensure
       TestModel.singleton_class.send(:remove_method, :exists?)
       TestModel.define_singleton_method(:exists?, original_exists) # Restore original method
