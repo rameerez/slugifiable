@@ -195,20 +195,21 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
   def test_compute_base_slug_handles_nil_attribute
     model = TestModel.new(title: nil)
 
-    # Should fallback to ID-based slug when attribute is nil
+    # Should fallback to ID-based slug (Integer) when attribute is nil
+    # This matches compute_slug_based_on_attribute's fallback behavior
     base_slug = model.send(:compute_base_slug)
 
-    # For a new record without ID, this falls back to compute_slug_as_string
-    assert_kind_of String, base_slug
+    assert_kind_of Integer, base_slug
   end
 
   def test_compute_base_slug_handles_blank_attribute
     model = TestModel.new(title: "   ")
 
-    # Should fallback to ID-based slug when parameterized value is blank
+    # Should fallback to ID-based slug (Integer) when parameterized value is blank
+    # This matches compute_slug_based_on_attribute's fallback behavior
     base_slug = model.send(:compute_base_slug)
 
-    assert_kind_of String, base_slug
+    assert_kind_of Integer, base_slug
   end
 
   def test_compute_base_slug_with_id_based_strategy
@@ -240,10 +241,78 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
       [:compute_slug_based_on_attribute, :nonexistent_attribute]
     end
 
-    # Should fallback to ID-based slug
+    # Should fallback to ID-based slug (Integer)
+    # This matches compute_slug_based_on_attribute's fallback behavior
     base_slug = model.send(:compute_base_slug)
 
-    assert_kind_of String, base_slug
+    assert_kind_of Integer, base_slug
+  end
+
+  # ==========================================================================
+  # Regression tests for reviewer-identified issues
+  # ==========================================================================
+
+  def test_compute_base_slug_nil_fallback_matches_compute_slug_nil_fallback
+    # Reviewer concern: compute_base_slug and compute_slug_based_on_attribute should
+    # have consistent fallback behavior for nil attributes.
+    #
+    # FIXED: Both now use generate_random_number_based_on_id_hex (returns Integer)
+    model = TestModel.new(title: nil)
+    model.id = 123
+
+    base_slug = model.send(:compute_base_slug)
+    full_slug = model.compute_slug
+
+    # Both should return Integer (generate_random_number_based_on_id_hex)
+    assert_kind_of Integer, base_slug, "compute_base_slug should return Integer for nil"
+    assert_kind_of Integer, full_slug, "compute_slug should return Integer for nil"
+
+    # Both should return the same value for same ID
+    assert_equal base_slug, full_slug, "Both methods should return same fallback value"
+  end
+
+  def test_compute_base_slug_blank_fallback_matches_compute_slug_blank_fallback
+    # Test blank (whitespace-only) title behavior
+    model = TestModel.new(title: "   ")
+    model.id = 456
+
+    base_slug = model.send(:compute_base_slug)
+    full_slug = model.compute_slug
+
+    # Both should return Integer (generate_random_number_based_on_id_hex)
+    assert_kind_of Integer, base_slug, "compute_base_slug should return Integer for blank"
+    assert_kind_of Integer, full_slug, "compute_slug should return Integer for blank"
+
+    # Both should return the same value for same ID
+    assert_equal base_slug, full_slug, "Both methods should return same fallback value"
+  end
+
+  def test_exhaustion_fallback_raises_on_continued_failure
+    # Reviewer concern: on_exhaustion uses self.save (not save!) which might
+    # swallow failures. This test verifies the actual behavior.
+    #
+    # The exhaustion fallback should raise if even the timestamp slug fails.
+    always_fails_model = build_update_race_model do
+      class_attribute :exhaustion_reached, instance_accessor: false, default: false
+
+      before_update do
+        # Mark when we've gone past normal retries
+        if slug&.include?("-#{Time.current.to_i}-")
+          self.class.exhaustion_reached = true
+        end
+        # Always fail
+        raise ActiveRecord::RecordNotUnique, "UNIQUE constraint failed: test_models.slug"
+      end
+    end
+
+    # This should raise because even exhaustion fallback fails
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      always_fails_model.create!(title: "Exhaustion Test")
+    end
+
+    # Verify exhaustion was actually attempted
+    assert always_fails_model.exhaustion_reached,
+      "Should have attempted exhaustion fallback with timestamp slug"
   end
 
   private

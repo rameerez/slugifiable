@@ -141,6 +141,9 @@ module Slugifiable
 
     # Returns the raw parameterized slug without uniqueness handling.
     # Used by the exhaustion fallback to avoid double-suffixing.
+    #
+    # Fallback behavior matches compute_slug_based_on_attribute: uses
+    # generate_random_number_based_on_id_hex for nil/blank/missing attributes.
     def compute_base_slug
       strategy, options = determine_slug_generation_method
 
@@ -154,13 +157,13 @@ module Slugifiable
           self.class.protected_method_defined?(attribute_name)
         )
 
-        return compute_slug_as_string unless has_attribute || responds_to_method
+        return generate_random_number_based_on_id_hex unless has_attribute || responds_to_method
 
         raw_value = self.send(attribute_name)
-        return compute_slug_as_string if raw_value.nil?
+        return generate_random_number_based_on_id_hex if raw_value.nil?
 
         base_slug = raw_value.to_s.strip.parameterize
-        base_slug.presence || compute_slug_as_string
+        base_slug.presence || generate_random_number_based_on_id_hex
       else
         # For ID-based strategies, return the deterministic hash
         compute_slug
