@@ -243,13 +243,14 @@ module Slugifiable
 
     # Detects if a RecordNotUnique error is related to the slug column.
     #
-    # NOTE: This uses word-boundary matching on the error message to reduce
-    # false positives from columns/tables containing "slug" as a substring
-    # (e.g., "reslugged_items" won't match, but "slug" and "index_on_slug" will).
-    # Trade-offs:
-    # - PostgreSQL includes constraint names like "index_users_on_slug"
-    # - MySQL/SQLite include column names in violation messages
-    # - A more precise check would require adapter-specific parsing
+    # NOTE: This uses word-boundary matching on the error message. Since Ruby
+    # regex treats underscore as a word character, constraint names like
+    # "index_users_on_slug" won't match via word boundary. However, detection
+    # still works because:
+    # - SQLite: "UNIQUE constraint failed: table.slug" (period before slug)
+    # - PostgreSQL: "DETAIL: Key (slug)=(value)" (parens around slug)
+    # - MySQL: includes column name directly
+    # A more precise check would require adapter-specific parsing.
     def slug_unique_violation?(error)
       message = error.message.to_s.downcase
       cause_message = error.cause&.message.to_s.downcase
@@ -258,6 +259,10 @@ module Slugifiable
 
     # Handle INSERT-time slug races for models that persist slugs at create-time
     # (e.g., NOT NULL slug columns with before_validation slug generation).
+    #
+    # NOTE: This calls `yield` multiple times (once per attempt) via `retry`.
+    # This relies on Rails `around_create` yielding a re-invocable Proc, which
+    # is undocumented but has worked consistently in Rails 6-8.
     def retry_create_on_slug_unique_violation
       return yield unless slug_persisted?
       # Skip savepoint overhead for nullable slug columns — INSERT-time slug

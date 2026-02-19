@@ -157,7 +157,7 @@ class Slugifiable::RaceConditionRetryTest < Minitest::Test
     end
   end
 
-  def test_update_slug_if_nil_uses_retry_mechanism
+  def test_update_slug_if_nil_regenerates_slug
     model = TestModel.create!(title: "Nil Slug Test")
     model.update_column(:slug, nil)
 
