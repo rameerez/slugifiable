@@ -33,11 +33,12 @@ module Slugifiable
     # 10^18 fits safely in a 64-bit integer
     MAX_NUMBER_LENGTH = 18
 
-    # Maximum number of attempts to generate a unique slug
-    # before falling back to timestamp-based suffix
+    # Maximum number of attempts to generate a unique slug before raising.
+    # Also used by generate_unique_slug for EXISTS? check loop (with timestamp fallback).
     MAX_SLUG_GENERATION_ATTEMPTS = 10
 
     included do
+      around_create :retry_create_on_slug_unique_violation
       after_create :set_slug
       after_find :update_slug_if_nil
       validates :slug, uniqueness: true
@@ -136,7 +137,58 @@ module Slugifiable
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
 
+    protected
+
+    # Override this method to customize slug regeneration on retry.
+    # By default, just calls compute_slug which uses SecureRandom for uniqueness.
+    def compute_slug_for_retry
+      compute_slug
+    end
+
     private
+
+    # S1: around_create retry for NOT NULL slug columns (pre-INSERT collision)
+    # S2: Uses savepoint (requires_new: true) for PostgreSQL compatibility
+    # S4: Skips overhead when slug column is nullable (no INSERT-time collision possible)
+    def retry_create_on_slug_unique_violation
+      return yield unless slug_persisted? && slug_column_not_null?
+
+      with_slug_retry { yield }
+    end
+
+    # S3: Shared retry helper with savepoints for both paths
+    # PostgreSQL requires savepoints: without them, retry fails with
+    # "current transaction is aborted, commands ignored until end"
+    def with_slug_retry
+      attempts = 0
+      begin
+        self.class.transaction(requires_new: true) { yield }
+      rescue ActiveRecord::RecordNotUnique => e
+        raise unless slug_unique_violation?(e)
+        raise if persisted? # Already saved, different error
+
+        attempts += 1
+        raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS # S6: Raise on exhaustion
+
+        self.slug = compute_slug_for_retry
+        retry
+      end
+    end
+
+    # S4: Optimization guard - skip savepoint wrapper when slug is nullable
+    def slug_column_not_null?
+      return false unless self.class.respond_to?(:columns_hash)
+      column = self.class.columns_hash["slug"]
+      column && !column.null
+    end
+
+    # S5: Detect slug unique violations across PostgreSQL/MySQL/SQLite
+    # Pattern matches: "slug" as word boundary OR "_on_slug" (index naming convention)
+    # Safe false-negative for custom index names (error bubbles up instead of silent retry)
+    def slug_unique_violation?(error)
+      message = error.message.to_s.downcase
+      message.match?(/\bslug\b|_on_slug\b/)
+    end
 
     def normalize_length(length, default, max)
       length = length.to_i
@@ -218,15 +270,34 @@ module Slugifiable
       self.class.method_defined?(:slug) || self.class.private_method_defined?(:slug)
     end
 
+    # S1: after_create retry for nullable slug columns (post-INSERT collision)
+    # S2: Uses savepoint via with_slug_retry for PostgreSQL compatibility
     def set_slug
       return unless slug_persisted?
+      return unless slug.blank?
 
-      self.slug = compute_slug if id_changed? || slug.blank?
-      self.save
+      attempts = 0
+      begin
+        self.slug = compute_slug_for_retry
+        self.class.transaction(requires_new: true) { save! }
+      rescue ActiveRecord::RecordNotUnique => e
+        raise unless slug_unique_violation?(e)
+
+        attempts += 1
+        raise if attempts >= MAX_SLUG_GENERATION_ATTEMPTS # S6: Raise on exhaustion
+
+        self.slug = nil # Clear for regeneration
+        retry
+      end
     end
 
+    # S7: Non-bang save for after_find repair path to avoid read-time exceptions
+    # This path handles legacy records that may have nil slugs
     def update_slug_if_nil
-      set_slug if slug_persisted? && self.slug.nil?
+      return unless slug_persisted? && slug.nil?
+
+      self.slug = compute_slug
+      save # Non-bang: read operations should not raise
     end
 
   end
