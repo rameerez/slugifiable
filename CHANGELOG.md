@@ -6,6 +6,10 @@
 - Added regression coverage for insert-time and update-time slug race windows
 - Added optional PostgreSQL integration test for transaction-abort-safe insert retries
 
+### Breaking Changes (Behavioral)
+
+- **For NOT NULL slug columns:** On insert-time slug collision, the entire `around_create` chain re-executes, which means `before_create` callbacks may fire multiple times. Move non-idempotent side effects (emails, jobs) to `after_create` to avoid duplication.
+
 ## [0.2.0] - 2026-01-16
 
 - Added a full Minitest test suite
