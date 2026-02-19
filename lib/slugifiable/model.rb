@@ -272,7 +272,7 @@ module Slugifiable
       on_exhaustion = -> {
         base_slug = compute_base_slug
         self.slug = "#{base_slug}-#{Time.current.to_i}-#{SecureRandom.hex(4)}"
-        self.class.transaction(requires_new: true) { self.save }
+        self.class.transaction(requires_new: true) { self.save! }
       }
 
       with_slug_retry(-> { self.slug = nil }, on_exhaustion: on_exhaustion) do
