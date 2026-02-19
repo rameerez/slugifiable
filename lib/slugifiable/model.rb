@@ -38,6 +38,7 @@ module Slugifiable
     MAX_SLUG_GENERATION_ATTEMPTS = 10
 
     included do
+      around_create :retry_create_on_slug_unique_violation
       after_create :set_slug
       after_find :update_slug_if_nil
       validates :slug, uniqueness: true
@@ -245,6 +246,27 @@ module Slugifiable
 
     def slug_unique_violation?(error)
       error.message.to_s.downcase.include?("slug")
+    end
+
+    # Handle INSERT-time slug races for models that persist slugs at create-time
+    # (e.g., NOT NULL slug columns with before_validation slug generation).
+    def retry_create_on_slug_unique_violation
+      attempts = 0
+
+      begin
+        yield
+      rescue ActiveRecord::RecordNotUnique => e
+        # Only retry slug collisions for persisted-slug models.
+        raise unless slug_persisted? && slug_unique_violation?(e)
+
+        attempts += 1
+        raise if attempts > MAX_SLUG_GENERATION_ATTEMPTS
+
+        # Recompute immediately because create-callback retries do not re-run
+        # validation callbacks.
+        self.slug = compute_slug if has_slug_method?
+        retry
+      end
     end
 
     def update_slug_if_nil

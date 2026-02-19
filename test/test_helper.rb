@@ -44,6 +44,13 @@ ActiveRecord::Schema.define do
     t.string :title
     t.timestamps
   end
+
+  create_table :strict_slug_models do |t|
+    t.string :title
+    t.string :slug, null: false
+    t.timestamps
+  end
+  add_index :strict_slug_models, :slug, unique: true
 end
 
 # Test model with slug column
@@ -63,6 +70,21 @@ class TestModelWithoutSlug < ActiveRecord::Base
 
   # Re-add any other validations your model might need here
   # (none in our test case)
+end
+
+# Model that requires a slug before INSERT (NOT NULL schema).
+# This mirrors the organizations gem integration mode.
+class StrictSlugModel < ActiveRecord::Base
+  include Slugifiable::Model
+  generate_slug_based_on :title
+
+  before_validation :ensure_slug_for_insert, on: :create
+
+  private
+
+  def ensure_slug_for_insert
+    self.slug = compute_slug if slug.blank?
+  end
 end
 
 # Helper module for resetting test model state
