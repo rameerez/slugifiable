@@ -46,6 +46,16 @@ module Slugifiable
 
     class_methods do
       def generate_slug_based_on(strategy, options = {})
+        # `except:` only makes sense for attribute-derived slugs (a reserved
+        # word can never collide with an id-derived hex/number slug in any
+        # meaningful way). Fail LOUDLY at class-definition time instead of
+        # silently ignoring the option.
+        id_based = strategy == :id || (strategy.is_a?(Hash) && strategy.key?(:id))
+        except_given = options.is_a?(Hash) && options.key?(:except) || (strategy.is_a?(Hash) && strategy.key?(:except) && strategy.key?(:id))
+        if id_based && except_given
+          raise ArgumentError, "slugifiable: `except:` (reserved slugs) only applies to attribute-based strategies, e.g. `generate_slug_based_on :name, except: %w[new create]`"
+        end
+
         # Remove previous definition if it exists to avoid warnings
         remove_method(:generate_slug_based_on) if method_defined?(:generate_slug_based_on)
 
@@ -262,7 +272,7 @@ module Slugifiable
         else
           # Keep user options (e.g. `except:` reserved slugs) alongside the
           # attribute name — they used to be dropped here.
-          return [:compute_slug_based_on_attribute, (options.is_a?(Hash) ? options : {}).merge(attribute: strategy)]
+          return [:compute_slug_based_on_attribute, options.merge(attribute: strategy)]
         end
       end
 
@@ -277,7 +287,7 @@ module Slugifiable
             return [DEFAULT_SLUG_GENERATION_STRATEGY, options]
           end
         elsif strategy.key?(:attribute)
-          return [:compute_slug_based_on_attribute, (options.is_a?(Hash) ? options : {}).merge(attribute: strategy[:attribute])]
+          return [:compute_slug_based_on_attribute, options.merge(attribute: strategy[:attribute])]
         end
       end
 

@@ -1,3 +1,9 @@
+## [Unreleased]
+
+- Added `except:` option for attribute-based strategies — reserved slugs (e.g. route segments like `/things/new` next to `/things/:slug`) are treated like collisions and get a random suffix; matching happens in parameterized space
+- `except:` with an `id:`-based strategy raises `ArgumentError` at class-definition time (it can't apply there; failing loudly beats a silent no-op)
+- Fixed: attribute-strategy options were silently dropped in `determine_slug_generation_method` (its internal return shape for attribute strategies is now `{attribute:, **options}`)
+
 ## [0.3.0] - 2026-02-19
 
 - Fixed race condition: retry with new random suffix on `RecordNotUnique` instead of crashing

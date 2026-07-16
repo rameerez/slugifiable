@@ -158,6 +158,9 @@ Product.create!(name: "Create").slug
 
 `except:` accepts a string, symbol, or array; matching happens in parameterized space, so `except: ["Admin"]` also blocks a record named `"ADMIN"`.
 
+> [!NOTE]
+> `except:` only applies to **attribute-based** strategies. Passing it with an `id:`-based strategy (`generate_slug_based_on id: :number, except: [...]`) raises an `ArgumentError` at class-definition time — id-derived hex/number slugs can't meaningfully collide with reserved words, and silently ignoring the option would be worse.
+
 More details in the "How to use" section.
 
 ## How to use

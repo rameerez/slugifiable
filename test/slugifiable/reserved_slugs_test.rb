@@ -61,4 +61,51 @@ class Slugifiable::ReservedSlugsTest < Minitest::Test
     model = TestModel.create!(title: "Create")
     refute_equal "create", model.slug
   end
+
+  def test_except_works_with_the_hash_attribute_syntax
+    TestModel.class_eval do
+      generate_slug_based_on attribute: :title, except: %w[create]
+    end
+
+    model = TestModel.create!(title: "Create")
+
+    refute_equal "create", model.slug
+    assert_match(/\Acreate-\d+\z/, model.slug)
+  end
+
+  def test_except_with_id_strategy_raises_loudly
+    error = assert_raises(ArgumentError) do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "test_models"
+        include Slugifiable::Model
+        generate_slug_based_on :id, except: %w[create]
+      end
+    end
+    assert_match(/only applies to attribute-based/, error.message)
+
+    assert_raises(ArgumentError) do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "test_models"
+        include Slugifiable::Model
+        generate_slug_based_on({ id: :number, except: %w[create] })
+      end
+    end
+  end
+
+  def test_reserved_words_apply_even_without_a_slug_column
+    TestModelWithoutSlug.class_eval do
+      generate_slug_based_on :title, except: %w[create]
+    end
+
+    model = TestModelWithoutSlug.create!(title: "Create")
+
+    # Computed (non-persisted) slugs respect reservations too: a route
+    # constraint is a host-app invariant, not a DB-uniqueness concern.
+    refute_equal "create", model.slug
+    assert_match(/\Acreate-\d+\z/, model.slug)
+  ensure
+    TestModelWithoutSlug.class_eval do
+      generate_slug_based_on :title
+    end
+  end
 end
