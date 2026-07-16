@@ -51,7 +51,8 @@ module Slugifiable
         # meaningful way). Fail LOUDLY at class-definition time instead of
         # silently ignoring the option.
         id_based = strategy == :id || (strategy.is_a?(Hash) && strategy.key?(:id))
-        except_given = options.is_a?(Hash) && options.key?(:except) || (strategy.is_a?(Hash) && strategy.key?(:except) && strategy.key?(:id))
+        except_given = (options.is_a?(Hash) && options.key?(:except)) ||
+                       (strategy.is_a?(Hash) && strategy.key?(:except) && strategy.key?(:id))
         if id_based && except_given
           raise ArgumentError, "slugifiable: `except:` (reserved slugs) only applies to attribute-based strategies, e.g. `generate_slug_based_on :name, except: %w[new create]`"
         end
