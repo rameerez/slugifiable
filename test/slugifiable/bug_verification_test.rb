@@ -344,7 +344,9 @@ class Slugifiable::BugVerificationTest < Minitest::Test
     method_sym, strategy = model.send(:determine_slug_generation_method)
 
     assert_equal :compute_slug_based_on_attribute, method_sym
-    assert_equal :title, strategy
+    # Options ride along with the attribute now (e.g. `except:` reserved
+    # slugs) — the second element is {attribute:, **options}.
+    assert_equal :title, strategy[:attribute]
   end
 
   def test_determine_slug_generation_method_with_hash_strategy

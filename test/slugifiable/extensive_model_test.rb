@@ -242,7 +242,7 @@ class Slugifiable::ExtensiveModelTest < Minitest::Test
     model = TestModel.create!(title: "Test")
     method_sym, strategy = model.send(:determine_slug_generation_method)
     assert_equal :compute_slug_based_on_attribute, method_sym, "Strategy should be compute_slug_based_on_attribute"
-    assert_equal :title, strategy, "Should use the :title attribute"
+    assert_equal :title, strategy[:attribute], "Should use the :title attribute"
   end
 
   def test_compute_slug_as_string_with_length

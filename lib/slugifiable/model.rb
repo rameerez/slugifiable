@@ -74,7 +74,9 @@ module Slugifiable
       length = options[:length] if options.is_a?(Hash)
 
       if strategy == :compute_slug_based_on_attribute
-        self.send(strategy, options)
+        # Attribute strategies carry {attribute:, **user_options} so options
+        # like `except:` (reserved slugs) survive the dispatch.
+        self.send(strategy, options[:attribute], options)
       else
         self.send(strategy, length)
       end
@@ -90,7 +92,7 @@ module Slugifiable
       generate_random_number_based_on_id_hex(length)
     end
 
-    def compute_slug_based_on_attribute(attribute_name)
+    def compute_slug_based_on_attribute(attribute_name, options = {})
       # This method generates a slug from either:
       # 1. A database column (e.g. generate_slug_based_on :title)
       # 2. An instance method (e.g. generate_slug_based_on :title_with_location)
@@ -133,7 +135,10 @@ module Slugifiable
 
       # Handle duplicate slugs by adding a random suffix if needed
       # e.g. "my-title" -> "my-title-123456"
-      unique_slug = generate_unique_slug(base_slug)
+      # `except:` (reserved slugs) are treated exactly like collisions: a
+      # record named "Create" must never mint the slug "create" when that
+      # path segment is a route (e.g. /org/create vs /org/:slug).
+      unique_slug = generate_unique_slug(base_slug, reserved: reserved_slugs_from(options))
       unique_slug.presence || generate_random_number_based_on_id_hex
     end
 
@@ -197,10 +202,13 @@ module Slugifiable
       ((Digest::SHA2.hexdigest(id.to_s)).hex % (10 ** length))
     end
 
-    def generate_unique_slug(base_slug)
+    def generate_unique_slug(base_slug, reserved: [])
       slug_candidate = base_slug
 
-      return slug_candidate unless slug_persisted?
+      # Reserved slugs (the `except:` option) are checked even for
+      # non-persisted slug models: a reserved word is a hard constraint of
+      # the host app's routes, not a database uniqueness concern.
+      return slug_candidate unless slug_persisted? || reserved.any?
 
       # Collision resolution logic:
       # Try up to MAX_SLUG_GENERATION_ATTEMPTS times with random suffixes
@@ -208,7 +216,7 @@ module Slugifiable
       # of finding a unique slug
       attempts = 0
 
-      while self.class.exists?(slug: slug_candidate) && attempts < MAX_SLUG_GENERATION_ATTEMPTS
+      while slug_taken?(slug_candidate, reserved) && attempts < MAX_SLUG_GENERATION_ATTEMPTS
         attempts += 1
         # Use SecureRandom for truly random suffixes during collision resolution
         # This ensures each attempt tries a different suffix
@@ -225,6 +233,23 @@ module Slugifiable
       slug_candidate
     end
 
+    # A candidate is unusable when a record already owns it OR the host app
+    # reserved it (route segments and friends).
+    def slug_taken?(slug_candidate, reserved)
+      return true if reserved.include?(slug_candidate)
+
+      slug_persisted? && self.class.exists?(slug: slug_candidate)
+    end
+
+    # Normalizes the `except:` option: accepts a string, symbol, array, or
+    # anything responding to to_a; compares in parameterized space so
+    # `except: ["Create"]` still blocks the slug "create".
+    def reserved_slugs_from(options)
+      return [] unless options.is_a?(Hash)
+
+      Array(options[:except]).map { |entry| entry.to_s.strip.parameterize }.reject(&:empty?)
+    end
+
     def determine_slug_generation_method
       return [DEFAULT_SLUG_GENERATION_STRATEGY, {}] unless respond_to?(:generate_slug_based_on)
 
@@ -235,7 +260,9 @@ module Slugifiable
         if strategy == :id
           return [:compute_slug_as_string, options]
         else
-          return [:compute_slug_based_on_attribute, strategy]
+          # Keep user options (e.g. `except:` reserved slugs) alongside the
+          # attribute name — they used to be dropped here.
+          return [:compute_slug_based_on_attribute, (options.is_a?(Hash) ? options : {}).merge(attribute: strategy)]
         end
       end
 
@@ -250,7 +277,7 @@ module Slugifiable
             return [DEFAULT_SLUG_GENERATION_STRATEGY, options]
           end
         elsif strategy.key?(:attribute)
-          return [:compute_slug_based_on_attribute, strategy[:attribute]]
+          return [:compute_slug_based_on_attribute, (options.is_a?(Hash) ? options : {}).merge(attribute: strategy[:attribute])]
         end
       end
 

@@ -142,6 +142,22 @@ Product.first.slug
 => "6b86b2"
 ```
 
+### Reserved slugs (`except:`)
+
+If your routes mount static segments next to the slug (like `/products/new` alongside `/products/:slug`), a record named `"New"` must never mint the slug `"new"`. Pass the reserved words with `except:` and they're treated exactly like collisions — the slug gets a random numeric suffix instead:
+
+```ruby
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :name, except: %w[new create admin]
+end
+
+Product.create!(name: "Create").slug
+=> "create-482910"   # never "create"
+```
+
+`except:` accepts a string, symbol, or array; matching happens in parameterized space, so `except: ["Admin"]` also blocks a record named `"ADMIN"`.
+
 More details in the "How to use" section.
 
 ## How to use
