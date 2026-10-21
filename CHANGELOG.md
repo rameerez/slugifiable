@@ -1,8 +1,9 @@
-## [Unreleased]
+## [0.4.0] - 2026-10-21
 
-- Added `except:` option for attribute-based strategies — reserved slugs (e.g. route segments like `/things/new` next to `/things/:slug`) are treated like collisions and get a random suffix; matching happens in parameterized space
+- Added `except:` option for attribute-based strategies: reserved slugs (e.g. route segments like `/things/new` next to `/things/:slug`) are treated like collisions and get a random suffix; matching happens in parameterized space
 - `except:` with an `id:`-based strategy raises `ArgumentError` at class-definition time (it can't apply there; failing loudly beats a silent no-op)
 - Fixed: attribute-strategy options were silently dropped in `determine_slug_generation_method` (its internal return shape for attribute strategies is now `{attribute:, **options}`)
+- `compute_slug_based_on_attribute` now receives the strategy options as a second argument; a model that overrides it with a one-argument signature must accept `(attribute_name, options = {})`
 
 ## [0.3.0] - 2026-02-19
 
