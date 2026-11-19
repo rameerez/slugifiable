@@ -161,6 +161,22 @@ Product.create!(name: "Create").slug
 > [!NOTE]
 > `except:` only applies to **attribute-based** strategies. Passing it with an `id:`-based strategy (`generate_slug_based_on id: :number, except: [...]`) raises an `ArgumentError` at class-definition time — id-derived hex/number slugs can't meaningfully collide with reserved words, and silently ignoring the option would be worse.
 
+### Bounded slugs (`max_length:`)
+
+A slug built from a free-text attribute is as long as the text. If slugs end up somewhere with a limit (a URL segment your API validates, a subdomain, an indexed column) cap the base:
+
+```ruby
+class Product < ApplicationRecord
+  include Slugifiable::Model
+  generate_slug_based_on :name, max_length: 80
+end
+
+Product.create!(name: "Hydraulic Analysis Tool " * 10).slug
+=> "hydraulic-analysis-tool-hydraulic-analysis-tool-hydraulic-analysis-tool-hydrauli"
+```
+
+The cap is in bytes and applies to the parameterized base, after transliteration (`"Æ"` becomes `"ae"`), so it bounds what is actually stored. A cut never leaves a trailing separator. The uniqueness suffix is appended **after** the cap: leave room for it. A collision adds up to 7 characters (`-123456`), and the last-resort timestamp fallback up to 15 (`-1763539200-999`).
+
 More details in the "How to use" section.
 
 ## How to use

@@ -57,6 +57,11 @@ module Slugifiable
           raise ArgumentError, "slugifiable: `except:` (reserved slugs) only applies to attribute-based strategies, e.g. `generate_slug_based_on :name, except: %w[new create]`"
         end
 
+        max_length = options[:max_length] if options.is_a?(Hash)
+        unless max_length.nil? || (max_length.is_a?(Integer) && max_length.positive?)
+          raise ArgumentError, "slugifiable: `max_length:` must be a positive Integer, e.g. `generate_slug_based_on :name, max_length: 80`"
+        end
+
         # Remove previous definition if it exists to avoid warnings
         remove_method(:generate_slug_based_on) if method_defined?(:generate_slug_based_on)
 
@@ -141,7 +146,7 @@ module Slugifiable
 
       # Convert to URL-friendly format
       # e.g. "My Title" -> "my-title"
-      base_slug = raw_value.to_s.strip.parameterize
+      base_slug = truncate_slug_base(raw_value.to_s.strip.parameterize, options)
       return generate_random_number_based_on_id_hex if base_slug.blank?
 
       # Handle duplicate slugs by adding a random suffix if needed
@@ -250,6 +255,18 @@ module Slugifiable
       return true if reserved.include?(slug_candidate)
 
       slug_persisted? && self.class.exists?(slug: slug_candidate)
+    end
+
+    # The `max_length:` option: caps the slug's base, in bytes, before any
+    # uniqueness suffix is appended. Applied to the parameterized string
+    # because that is the one whose length counts ("Æ" transliterates to
+    # "ae", so cutting the raw value first would not bound the result), and
+    # never leaves a dangling separator behind.
+    def truncate_slug_base(base_slug, options)
+      max_length = options[:max_length] if options.is_a?(Hash)
+      return base_slug unless max_length
+
+      base_slug.byteslice(0, max_length).scrub("").sub(/[-_]+\z/, "")
     end
 
     # Normalizes the `except:` option: accepts a string, symbol, array, or
