@@ -1,3 +1,7 @@
+## [Unreleased]
+
+- Added `max_length:` option for attribute-based strategies: caps the slug base in bytes, after parameterization and before the uniqueness suffix, and never leaves a trailing separator. A non-positive or non-Integer value raises `ArgumentError` at class-definition time
+
 ## [0.4.0] - 2026-10-21
 
 - Added `except:` option for attribute-based strategies: reserved slugs (e.g. route segments like `/things/new` next to `/things/:slug`) are treated like collisions and get a random suffix; matching happens in parameterized space
